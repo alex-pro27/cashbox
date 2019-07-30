@@ -234,7 +234,7 @@ PyObject* cashbox_close_shift(PyObject* self, PyObject* args, PyObject* kwargs) 
 	};
 
 	int err_code = libPrintZReport((char*)utf2oem((char*)cashier).c_str(), 1);
-	addShiftNumber(&data);
+	addShiftNumber(&data, true);
 	addZReport(&data);
 
 	wstring st = L"Успешно";
@@ -256,7 +256,7 @@ Force close a cashier shift\
 PyObject* cashbox_force_close_shift(PyObject* self) {
 	map<string, PyObject*> data = {};
 	int err_code = libEmergencyCloseShift();
-	addShiftNumber(&data);
+	addShiftNumber(&data, true);
 	addZReport(&data);
 	wstring st = L"Успешно";
 	if (err_code > 0)
