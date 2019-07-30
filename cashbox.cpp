@@ -105,7 +105,7 @@ void addProgressiveTotalSales(map<string, PyObject*> *data) {
 void addShiftNumber(map<string, PyObject*>* data, bool prev = false) {
 	string shift_number = requestDecorator(1, libGetCountersAndRegisters);
 	if (shift_number != "") {
-		long long int number = stoll(shift_number);
+		long long number = stoll(shift_number);
 		if (prev) {
 			number -= 1;
 		}
@@ -276,7 +276,7 @@ Cancel payment by link \
 :return dict()");
 PyObject* cashbox_cancel_payment_by_link(PyObject* self, PyObject* args, PyObject* kwargs) {
 	char* rrn = "";
-	long long int amount = 0;
+	int amount = 0;
 	static char* keywords[] = { "rrn", "amount", NULL };
 	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "si", keywords, &rrn, &amount)) {
 		return NULL;
