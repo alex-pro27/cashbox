@@ -2,7 +2,7 @@
 #ifndef PrintLib_H
 #define PrintLib_H
 
-#pragma comment(lib, "PiritLib.lib")
+#pragma comment(lib, "C:\\Pirit2f\\PiritLib.lib")
 #define IMPORTDLL extern "C" __declspec(dllimport)
 #define PIRITLIB_CALL __stdcall
 
