@@ -10,7 +10,7 @@ pip install git+https://github.com/alex-pro27/cashbox
 ```
 
 **Arcus:**
-<a target="_blank" href="https://support.merkata.ru/hc/ru/articles/115002583629-%D0%9F%D0%BE%D0%B4%D0%BA%D0%BB%D1%8E%D1%87%D0%B5%D0%BD%D0%B8%D0%B5-%D0%B1%D0%B0%D0%BD%D0%BA%D0%BE%D0%B2%D1%81%D0%BA%D0%BE%D0%B3%D0%BE-%D1%82%D0%B5%D1%80%D0%BC%D0%B8%D0%BD%D0%B0%D0%BB%D0%B0-%D1%87%D0%B5%D1%80%D0%B5%D0%B7-Ingenico-IPP-320-350-%D1%81-%D0%BF%D0%BE%D0%BC%D0%BE%D1%89%D1%8C%D1%8E-Arcus">-> Подключение банковского терминала через Ingenico IPP 320/350 с помощью Arcus</a>
+<a target="_blank" href="http://ftp.f-trade.ru/Payment_terminals/Ingenico_ICT220-250/Integration/arcus2-setup/">-> Инструкция и драйвер</a>
 
 **Pirit2F**
 <a target="_blank" href="https://www.crystals.ru/support/download/kkt-pirit-2f">->Документация и драйверы для Пирит 2Ф</a>
