@@ -427,7 +427,9 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 			arcus->purchase((char*)to_string(sum).c_str());
 			payment_error = atoi(arcus->auth_data.responseCode);
 			data["rrn"] = PyUnicode_FromString(arcus->auth_data.rrn);
-			data["card_number"] = PyUnicode_FromString(arcus->auth_data.pan);
+			data["pan_card"] = PyUnicode_FromString(arcus->auth_data.pan);
+			string cardholder_name = trim(string(arcus->auth_data.cardholder_name));
+			data["cardholder_name"] = PyUnicode_FromString(cardholder_name.c_str());
 		} 
 		else if (doc_type == 3) {
 			if (rrn == "") {

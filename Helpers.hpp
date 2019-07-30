@@ -11,6 +11,10 @@
 #include <codecvt>
 #include <string>
 #include <vector>
+#include <algorithm> 
+#include <functional> 
+#include <cctype>
+#include <locale>
 
 using namespace std;
 
@@ -27,6 +31,22 @@ privDefer<F> defer_func(F f) {
 }
 
 namespace Helpers {
+
+	static inline std::string& ltrim(std::string& s) {
+		s.erase(s.begin(), std::find_if(s.begin(), s.end(),
+			std::not1(std::ptr_fun<int, int>(std::isspace))));
+		return s;
+	}
+
+	static inline std::string& rtrim(std::string& s) {
+		s.erase(std::find_if(s.rbegin(), s.rend(),
+			std::not1(std::ptr_fun<int, int>(std::isspace))).base(), s.end());
+		return s;
+	}
+
+	static inline std::string& trim(std::string& s) {
+		return ltrim(rtrim(s));
+	}
 
 	vector<string> split(const string& str, const string& delim) {
 		vector<string> tokens;

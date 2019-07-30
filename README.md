@@ -10,7 +10,7 @@ pip install git+https://github.com/alex-pro27/cashbox
 ```
 
 **Arcus:**
-<a target="_blank" href="http://ftp.f-trade.ru/Payment_terminals/Ingenico_ICT220-250/Integration/arcus2-setup/">-> Инструкция и драйвер</a>
+<a target="_blank" href="http://ftp.f-trade.ru/Payment_terminals/Ingenico_ICT220-250/Integration/arcus2-setup/">-> Документация и драйверы для Arcus</a>
 
 **Pirit2F**
 <a target="_blank" href="https://www.crystals.ru/support/download/kkt-pirit-2f">->Документация и драйверы для Пирит 2Ф</a>
@@ -112,4 +112,6 @@ rrn str - ссылка безналичного платежа(ID платежа
 check_number int - Номер чека
 discount_sum float - Скидка
 doc_number int - Номер документа
+pan_card str - Пан карты
+cardholder_name - str - Имя держателя карты
 ```
