@@ -245,6 +245,7 @@ PyObject* cashbox_close_shift(PyObject* self, PyObject* args, PyObject* kwargs) 
 	auto error = PyBool_FromLong(err_code);
 
 	data["error"] = error;
+	data["message"] = message;
 	data["error_code"] = PyLong_FromLong(err_code);
 
 	return createPyDict(data);
@@ -264,6 +265,7 @@ PyObject* cashbox_force_close_shift(PyObject* self) {
 
 	auto message = PyUnicode_FromWideChar(st.c_str(), st.size());
 	auto error = PyBool_FromLong(err_code);
+	data["message"] = message;
 	data["error"] = error;
 	data["error_code"] = PyLong_FromLong(err_code);
 	return createPyDict(data);
@@ -412,13 +414,14 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 
 	for (int i = 0; i < wares->allocated; i++) {
 		PyObject *ware = wares->ob_item[i];
-		const char* name = PyUnicode_AsUTF8(PyDict_GetItemString(ware, "name"));
 		double price = PyFloat_AsDouble(PyDict_GetItemString(ware, "price"));
 		double quantity = PyFloat_AsDouble(PyDict_GetItemString(ware, "quantity"));
 		_sum += price * quantity;
 		sum = (((int)(_sum * 100 + 0.5)) / 100.0) * 100;
 	}
 	
+	data["transaction_sum"] = PyFloat_FromDouble(_sum);
+
 	if (payment_type == 1) {
 		// Безнал
 		arcus = new ArcusHandlers();

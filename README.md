@@ -52,7 +52,7 @@ set_zero_cash_drawer()
 ```python
 """
 :param str cashier: - Имя кассира
-:param int payment_type: - Тип оплаты 0 - безнал, 1 - Наличка
+:param int payment_type: - Тип оплаты 1 - безнал, 0 - Наличка
 :param int doc_type: - Тип документа 2 - Оплата, 3 - Возврат
 :param str rrn: - ID Платежа, Передается в случае возврата, по безналичному платежу, в остальных случаях, пустая строка ""
 :param list wares: - Список товаров [
@@ -113,5 +113,6 @@ check_number int - Номер чека
 discount_sum float - Скидка
 doc_number int - Номер документа
 pan_card str - Пан карты
-cardholder_name - str - Имя держателя карты
+cardholder_name str - Имя держателя карты
+transaction_sum float - Сумма транзакции
 ```
