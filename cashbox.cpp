@@ -4,6 +4,7 @@
 #include <sstream>
 #include <regex>
 #include <map>
+#include <cmath>
 #include <windows.h>
 #include "Helpers.hpp"
 #include "PiritLib.h"
@@ -420,9 +421,8 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 		double price = PyFloat_AsDouble(PyDict_GetItemString(ware, "price"));
 		double quantity = PyFloat_AsDouble(PyDict_GetItemString(ware, "quantity"));
 		_sum += price * quantity;
-		sum = (((int)(_sum * 100 + 0.5)) / 100.0) * 100;
 	}
-	
+	sum = ceill(_sum * 100);
 	data["transaction_sum"] = PyFloat_FromDouble(_sum);
 
 	if (payment_type == 1) {
@@ -556,6 +556,7 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 		if (ans.errCode > 0) {
 			message = L"Ошибка закрытия документа";
 			err_code = ans.errCode;
+			libCancelDocument();
 			if (payment_error == 0 && payment_type == 2) {
 				payment_error = atoi(arcus->auth_data.responseCode);
 				if (payment_error > 0) {
@@ -604,7 +605,7 @@ static PyMethodDef cashbox_functions[] = {
 int exec_cashbox(PyObject *module) {
     PyModule_AddFunctions(module, cashbox_functions);
     PyModule_AddStringConstant(module, "__author__", "alex-proc");
-    PyModule_AddStringConstant(module, "__version__", "1.0.1");
+    PyModule_AddStringConstant(module, "__version__", "1.0.2");
     PyModule_AddIntConstant(module, "year", 2019);
     return 0; /* success */
 }
