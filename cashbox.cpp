@@ -187,6 +187,7 @@ Opening a cashier shift\
 :param str cashier: - Cashier name\
 :return dict()");
 PyObject* cashbox_open_shift(PyObject* self, PyObject* args, PyObject* kwargs) {
+	commandStart();
 	const char* cashier;
 	static char* keywords[] = { "cashier", NULL };
 	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "s", keywords, &cashier)) {
@@ -224,6 +225,7 @@ Close a cashier shift\
 :param str cashier: - Cashier name\
 :return dict()");
 PyObject* cashbox_close_shift(PyObject* self, PyObject* args, PyObject* kwargs) {
+	commandStart();
 	const char* cashier;
 	static char* keywords[] = { "cashier", NULL };
 	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "s", keywords, &cashier)) {
@@ -255,6 +257,7 @@ PyDoc_STRVAR(cashbox_force_close_shift_doc, "force_close_shift()\
 Force close a cashier shift\
 :return dict()");
 PyObject* cashbox_force_close_shift(PyObject* self) {
+	commandStart();
 	map<string, PyObject*> data = {};
 	int err_code = libEmergencyCloseShift();
 	addShiftNumber(&data, true);
@@ -601,7 +604,7 @@ static PyMethodDef cashbox_functions[] = {
 int exec_cashbox(PyObject *module) {
     PyModule_AddFunctions(module, cashbox_functions);
     PyModule_AddStringConstant(module, "__author__", "alex-proc");
-    PyModule_AddStringConstant(module, "__version__", "1.0.0");
+    PyModule_AddStringConstant(module, "__version__", "1.0.1");
     PyModule_AddIntConstant(module, "year", 2019);
     return 0; /* success */
 }
