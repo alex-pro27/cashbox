@@ -15,6 +15,7 @@
 #include <functional> 
 #include <cctype>
 #include <locale>
+#include <iomanip>
 
 using namespace std;
 
@@ -90,6 +91,10 @@ namespace Helpers {
 		return transcode(pszCode, CP_ACP, CP_UTF8);
 	}
 
+	std::string utf2cp(char* pszCode) {
+		return transcode(pszCode, CP_UTF8, CP_ACP);
+	}
+
 	std::string utf2oem(char* pszCode) {
 		return transcode(pszCode, CP_UTF8, CP_OEMCP);
 	};
@@ -97,6 +102,12 @@ namespace Helpers {
 	std::string cp2oem(char* pszCode) {
 		return transcode(pszCode, CP_ACP, CP_OEMCP);
 	};
+
+	std::string to_fixed(long double num, int precision = 2) {
+		std::ostringstream stream_obj;
+		stream_obj << std::fixed << std::setprecision(precision) << num;
+		return stream_obj.str();
+	}
 
 	unsigned int get_mask(unsigned int pos, unsigned int n) {
 		return ~(~0 << n) << pos;

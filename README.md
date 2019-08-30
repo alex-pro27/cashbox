@@ -44,11 +44,13 @@ kkt_info()
 ```
 Z-Отчет по последней закрытой смене:
 ```python
-last_z_report()
+:param bool print_repor: - Печатать или нет
+last_z_report(print_report)
 ```
 Обнулить денежный ящик:
 ```python
-set_zero_cash_drawer()
+set_zero_cash_drawer(cashier)
+:param str cashier: - Кассир
 ```
 Новая транзакция:
 ```python
@@ -56,7 +58,6 @@ set_zero_cash_drawer()
 :param str cashier: - Имя кассира
 :param int payment_type: - Тип оплаты 1 - безнал, 0 - Наличка
 :param int doc_type: - Тип документа 2 - Оплата, 3 - Возврат
-:param str rrn: - ID Платежа, Передается в случае возврата, по безналичному платежу, в остальных случаях, пустая строка ""
 :param list wares: - Список товаров [
 	{
 		"name":"Вино шато",  Наименование
@@ -64,10 +65,13 @@ set_zero_cash_drawer()
 		"quantity":1, Количество
 		"price":56.7, - Цена
 		"tax_number":0, - Налог 1 - 10%, 0 - 20%
+		"discount": 0.7 - Скидка
 	},
-]
+],
+:param float or int amount: - Необязательный аргумент, Количество денег отданых кассиру передается в случае если оплата по наличному расчету
+:param str rrn: - Необязательный аргумент, ID Платежа, Передается в случае возврата, по безналичному платежу
 """
-new_transaction(cashier, payment_type, doc_type, rrn, wares)
+new_transaction(cashier, payment_type, doc_type, wares, amount, rrn)
 ```
 Отменить безналичный платеж по ID
 ```python
@@ -81,7 +85,7 @@ cancel_payment_by_link(rrn, amount)
 ```python
 """
 :param str cashier: Кассир
-:param int amount: Количество
+:param int amount: Количество вносимых/изъимаемых денег (в копейках)
 :param int doc_type: Тип документа 4 - внесение, 5 - изъятие
 """
 handler_cash_drawer(cashier, amount, doc_type)
@@ -117,4 +121,6 @@ doc_number int - Номер документа
 pan_card str - Пан карты
 cardholder_name str - Имя держателя карты
 transaction_sum float - Сумма транзакции
+delivery float - Сдача,
+amount float - Количество вносимых / изъятых денег
 ```

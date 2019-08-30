@@ -6,6 +6,7 @@
 #include <map>
 #include <cmath>
 #include <windows.h>
+#include <wchar.h>
 #include "Helpers.hpp"
 #include "PiritLib.h"
 #include "Arcus.hpp"
@@ -38,11 +39,14 @@ void setParsedData(map<char*, int> keys, string kktinfo, map<string, PyObject*> 
 	auto s = split(kktinfo, "\x1c");
 	for (auto it = keys.begin(); it != keys.end(); ++it) {
 		string value = s[it->second];
-		if (regex_match(value, std::regex("^\\d+\.\\d+$"))) {
-			(*data)[it->first] = PyFloat_FromDouble(stod(s[it->second]));
+		if (regex_match(value, std::regex("^(0|[1-9]+0?)\\.[0-9]+$"))) {
+			(*data)[it->first] = PyFloat_FromDouble(stold(value));
+		}
+		else if (regex_match(value, std::regex("^[1-9][0-9]+$"))) {
+			(*data)[it->first] = PyLong_FromLongLong(stoll(value));
 		}
 		else {
-			(*data)[it->first] = PyLong_FromLongLong(stoll(s[it->second]));
+			(*data)[it->first] = PyUnicode_FromString(value.c_str());
 		}
 	}
 }
@@ -68,7 +72,7 @@ void addKKTINFO(map<string, PyObject*> *data) {
 	/*Количество денег в денежном ящике*/
 	string cash_balance = requestDecorator(7, libGetKKTInfo);
 	if (cash_balance != "") {
-		(*data)["cash_balance"] = PyFloat_FromDouble(stod(requestDecorator(7, libGetKKTInfo)));
+		(*data)["cash_balance"] = PyFloat_FromDouble(stod(cash_balance));
 	}
 	/*Заводской номер фискальника*/
 	(*data)["fn_number"] = PyUnicode_FromString(requestDecorator(1, libGetKKTInfo).c_str());
@@ -118,7 +122,7 @@ void addShiftNumber(map<string, PyObject*>* data, bool prev = false) {
 void addZReport(map<string, PyObject*> *data) {
 	addMarckupAndDiscountInfo(data);
 	addProgressiveTotalSales(data);
-	/* Вернуть данные по последнему X или Z отчету */
+	/* Вернуть данные по последнему Z отчету */
 	string kktinfo = requestDecorator(12, libGetCountersAndRegisters);
 	if (kktinfo != "") {
 		map<char*, int> keys = {
@@ -301,50 +305,31 @@ PyObject* cashbox_cancel_payment_by_link(PyObject* self, PyObject* args, PyObjec
 	return createPyDict(data);
 };
 
-PyDoc_STRVAR(cashbox_set_zero_cash_drawer_doc, "set_zero_cash_drawer()\
+PyDoc_STRVAR(cashbox_set_zero_cash_drawer_doc, "set_zero_cash_drawer(cashier)\
 Reset cash drawer \
 :return dict()");
-PyObject* cashbox_set_zero_cash_drawer(PyObject* self) {
-	libOpenCashDrawer(0);
-	int err_code = libSetToZeroCashInCashDrawer();
-	wstring message = L"Успешно";
-	if (err_code > 0) {
-		message = L"Неудалось обнулить денежный ящик";
-	}
-	map<string, PyObject*> data = {
-		{"message", PyUnicode_FromWideChar(message.c_str(), message.size())},
-		{"error",  PyBool_FromLong(err_code)},
-		{"error_code", PyLong_FromLong(err_code)},
-	};
-	return createPyDict(data);
-};
-
-PyDoc_STRVAR(cashbox_handler_cash_drawer_doc, "handler_cash_drawer()\
-Reset cash drawer \
-:return dict()");
-PyObject* cashbox_handler_cash_drawer(PyObject* self, PyObject* args, PyObject* kwargs) {
+PyObject* cashbox_set_zero_cash_drawer(PyObject* self, PyObject* args, PyObject* kwargs) {
+	char* cashier;
 	int err_code = 0;
 	wstring message = L"Успешно";
-	char* cashier;
-	int amount;
-	int doc_type;
-	static char* keywords[] = { "cashier", "amount", "doc_type", NULL };
-	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "sii", keywords, &cashier, &amount, &doc_type)) {
+	static char* keywords[] = { "cashier", NULL };
+	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "s", keywords, &cashier)) {
 		return NULL;
 	}
-	if (!(doc_type == 4 || doc_type == 5)) {
-		err_code = 500;
-		message = L"Неверный тип документа (4 - внесение, 5 - изъятие)";
-	}
-	else {
-		err_code = libOpenDocument(doc_type, 1, (char*)utf2oem(cashier).c_str(), 0);
+	string _cash_balance = requestDecorator(7, libGetKKTInfo);
+	if (_cash_balance != "") {
+		long double cash_balance = stold(_cash_balance);
+		if (cash_balance == 0) {
+			PyErr_SetString(PyExc_ValueError, ws2s(L"В денежном ящике нет наличных").c_str());
+			return NULL;
+		}
+		err_code = libOpenDocument(5, 1, (char*)utf2oem(cashier).c_str(), 0);
 		if (err_code > 0) {
 			message = L"Не удалось открыть документ";
 			libCancelDocument();
 		}
 		else {
-			libOpenCashDrawer(0);
-			err_code = libCashInOut("", amount);
+			err_code = libCashInOut("", ceill(cash_balance * 100));
 			if (err_code > 0) {
 				message = L"Ошибка внесения/изъятия";
 				libCancelDocument();
@@ -356,9 +341,65 @@ PyObject* cashbox_handler_cash_drawer(PyObject* self, PyObject* args, PyObject* 
 					err_code = ans.errCode;
 					message = L"Не удалось закрыть документ";
 				}
+				else {
+					libOpenCashDrawer(0);
+				}
+			}
+			
+		}
+		map<string, PyObject*> data = {
+			{"message", PyUnicode_FromWideChar(message.c_str(), message.size())},
+			{"error",  PyBool_FromLong(err_code)},
+			{"error_code", PyLong_FromLong(err_code)},
+		};
+		return createPyDict(data);
+	}
+	PyErr_SetString(PyExc_ValueError, ws2s(L"Не удалось получить баланс в денежном ящике").c_str());
+	return NULL;
+};
+
+PyDoc_STRVAR(cashbox_handler_cash_drawer_doc, "handler_cash_drawer(cashier, amount, doc_type)\
+Handler cash drawer \
+:return dict()");
+PyObject* cashbox_handler_cash_drawer(PyObject* self, PyObject* args, PyObject* kwargs) {
+	int err_code = 0;
+	wstring message = L"Успешно";
+	char* cashier;
+	int amount = 0;
+	int doc_type = 0;
+	static char* keywords[] = { "cashier", "amount", "doc_type", NULL };
+	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "sii", keywords, &cashier, &amount, &doc_type)) {
+		return NULL;
+	}
+	if (!(doc_type == 4 || doc_type == 5)) {
+		PyErr_SetString(PyExc_ValueError, ws2s(L"Неверный тип документа (4 - внесение, 5 - изъятие)").c_str());
+		return NULL;
+	}
+	
+	err_code = libOpenDocument(doc_type, 1, (char*)utf2oem(cashier).c_str(), 0);
+	if (err_code > 0) {
+		message = L"Не удалось открыть документ";
+		libCancelDocument();
+	}
+	else {
+		err_code = libCashInOut("", amount);
+		if (err_code > 0) {
+			message = L"Ошибка внесения/изъятия";
+			libCancelDocument();
+		}
+		else {
+			MData ans = libCloseDocument(0);
+			if (ans.errCode > 0) {
+				libCancelDocument();
+				err_code = ans.errCode;
+				message = L"Не удалось закрыть документ";
+			} 
+			else {
+				libOpenCashDrawer(0);
 			}
 		}
 	}
+	
 	map<string, PyObject*> data = {
 		{"message", PyUnicode_FromWideChar(message.c_str(), message.size())},
 		{"error",  PyBool_FromLong(err_code)},
@@ -368,14 +409,22 @@ PyObject* cashbox_handler_cash_drawer(PyObject* self, PyObject* args, PyObject* 
 	return createPyDict(data);
 };
 
-PyDoc_STRVAR(cashbox_last_z_report_doc, "last_z_report()\
+PyDoc_STRVAR(cashbox_last_z_report_doc, "last_z_report(print_report)\
 Get z-report for last closed shift \
+:param bool print_report \
 :return dict()");
-PyObject* cashbox_last_z_report(PyObject* self) {
+PyObject* cashbox_last_z_report(PyObject* self, PyObject* args, PyObject* kwargs) {
+	int print_report = 0;
+	static char* keywords[] = { "print_report", NULL };
+	PyArg_ParseTupleAndKeywords(args, kwargs, "p", keywords, &print_report);
+	PyErr_Clear();
 	map<string, PyObject*> data = {};
 	addShiftNumber(&data, true);
 	addKKTINFO(&data);
 	addZReport(&data);
+	if (print_report) {
+		libPrintCopyLastZReport();
+	}
 	return createPyDict(data);
 };
 
@@ -389,19 +438,46 @@ PyObject* cashbox_kkt_info(PyObject* self) {
 	return createPyDict(data);
 };
 
-PyDoc_STRVAR(cashbox_new_transaction_doc, "new_transaction(cashier, payment_type, doc_type, rrn, wares)\
+PyDoc_STRVAR(cashbox_new_transaction_doc, "new_transaction(cashier, payment_type, doc_type, wares, amount, rrn)\
 create new transaction\
 :param str cashier: - Cashier name\
 :return dict()");
 PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwargs) {
-	const char* cashier;
+	char* cashier;
+	char* rrn;
 	int payment_type = 0;
 	int doc_type = 0;
-	const char* rrn;
+	double amount = 0.0;
 	PyListObject *wares;
 
-	static char* keywords[] = { "cashier", "payment_type", "doc_type", "rrn", "wares", NULL };
-	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "siisO", keywords, &cashier, &payment_type, &doc_type, &rrn, &wares)) {
+	static char* keywords_all[] = { "cashier", "payment_type", "doc_type", "wares", "amount", "rrn", NULL };
+	static char* keywords_rrn[] = { "cashier", "payment_type", "doc_type", "wares", "rrn", NULL };
+	static char* keywords_amount[] = { "cashier", "payment_type", "doc_type", "wares", "amount", NULL };
+	static char* keywords[] = { "cashier", "payment_type", "doc_type", "wares", NULL };
+
+	bool parse_ok = PyArg_ParseTupleAndKeywords(args, kwargs, "siiOd|is", keywords_all, &cashier, &payment_type, &doc_type, &wares, &amount, &rrn);
+
+	if (!parse_ok) {
+		parse_ok = PyArg_ParseTupleAndKeywords(args, kwargs, "siiOs", keywords_rrn, &cashier, &payment_type, &doc_type, &wares, &rrn);
+	}
+	if (!parse_ok) {
+		parse_ok = PyArg_ParseTupleAndKeywords(args, kwargs, "siiOd|i", keywords_amount, &cashier, &payment_type, &doc_type, &wares, &amount);
+	}
+	if (!parse_ok) {
+		parse_ok = PyArg_ParseTupleAndKeywords(args, kwargs, "siiO", keywords, &cashier, &payment_type, &doc_type, &wares);
+	}
+	if (!parse_ok) {
+		PyErr_SetString(PyExc_ValueError, "Invalid args. allowed formats: 'cashier: str', 'payment_type: int', 'doc_type: int', 'wares: list', 'amount: float|int', 'rrn: str',");
+		return NULL;
+	}
+
+	if(!(doc_type == 2 || doc_type == 3)) {
+		PyErr_SetString(PyExc_ValueError, ws2s(L"Неверный тип документа(2 - оплата, 3 - возварат)").c_str());
+		return NULL;
+	}
+
+	if (!(payment_type == 0 || payment_type == 1)) {
+		PyErr_SetString(PyExc_ValueError, ws2s(L"Неверный тип оплаты (1 - безналичный, 0 - наличный)").c_str());
 		return NULL;
 	}
 
@@ -410,6 +486,7 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 	int err_code = 0;
 	long long sum = 0;
 	double _sum = 0.0;
+	int discount_sum = 0;
 	int num_depart = 1;
 	int error_open_doc = 0;
 	int payment_error = 0;
@@ -419,18 +496,27 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 	for (int i = 0; i < wares->allocated; i++) {
 		PyObject *ware = wares->ob_item[i];
 		double price = PyFloat_AsDouble(PyDict_GetItemString(ware, "price"));
+		PyObject* discount_obj = PyDict_GetItemString(ware, "discount");
+		double discount = 0.0;
+		if (discount_obj != NULL) {
+			discount = PyFloat_AsDouble(discount_obj);
+		}
 		double quantity = PyFloat_AsDouble(PyDict_GetItemString(ware, "quantity"));
 		_sum += price * quantity;
+		if (discount > 0) {
+			discount_sum += ceil(discount * 100);
+		}
 	}
 	sum = ceill(_sum * 100);
 	data["transaction_sum"] = PyFloat_FromDouble(_sum);
 
 	if (payment_type == 1) {
 		// Безнал
+		amount = sum - discount_sum;
 		arcus = new ArcusHandlers();
 		if (doc_type == 2) {
 			arcus->auth();
-			arcus->purchase((char*)to_string(sum).c_str());
+			arcus->purchase((char*)to_string(amount).c_str());
 			payment_error = atoi(arcus->auth_data.responseCode);
 			data["rrn"] = PyUnicode_FromString(arcus->auth_data.rrn);
 			data["pan_card"] = PyUnicode_FromString(arcus->auth_data.pan);
@@ -439,30 +525,27 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 		} 
 		else if (doc_type == 3) {
 			if (rrn == "") {
-				payment_error = 405;
+				PyErr_SetString(PyExc_ValueError, ws2s(L"Отсутсвует параметр rrn(ссылка платежа)").c_str());
+				return NULL;
 			}
 			else {
-				arcus->cancelByLink((char*)rrn, (char*)to_string(sum).c_str());
+				arcus->cancelByLink(rrn, (char*)to_string(amount).c_str());
 				payment_error = atoi(arcus->auth_data.responseCode);
 			}
 		}
-		else {
-			payment_error = 9;
-		}
 		if (payment_error > 0) {
-			if (payment_error == 9) {
-				message = L"Неверный тип оплаты";
-			}
-			else if (payment_error == 405) {
-				message = L"Отсутсвует параметр rrn(ссылка платежа)";
-			}
-			else {
-				message = s2ws(cp2utf((char*)arcus->auth_data.text_message));
-			}
+			message = s2ws(cp2utf((char*)arcus->auth_data.text_message));
 		}
 	}
 	else if (payment_type == 0) {
 		// Наличка
+		if (amount == 0) {
+			PyErr_SetString(PyExc_ValueError, ws2s(L"При наличном платеже требуется параметр 'amount'").c_str());
+			return NULL;
+		}
+		data["delivery"] = PyFloat_FromDouble(ceil(amount - _sum - discount_sum / 100));
+		data["amount"] = PyFloat_FromDouble(amount);
+		amount *= 100;
 		libOpenCashDrawer(0); // Открыть денежный ящик
 	}
 
@@ -486,8 +569,14 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 			const char* name = PyUnicode_AsUTF8(PyDict_GetItemString(ware, "name"));
 			const char* barcode = PyUnicode_AsUTF8(PyDict_GetItemString(ware, "barcode"));
 			double price = PyFloat_AsDouble(PyDict_GetItemString(ware, "price"));
+			PyObject* discount_obj = PyDict_GetItemString(ware, "discount");
+			double discount = 0.0;
+			if (discount_obj != NULL) {
+				discount = PyFloat_AsDouble(discount_obj);
+			}
 			double quantity = PyFloat_AsDouble(PyDict_GetItemString(ware, "quantity"));
 			int tax_number = PyLong_AsLong(PyDict_GetItemString(ware, "tax_number"));
+			double discount_percent;
 			err_code = libAddPosition(
 				utf2oem((char*)name).c_str(),
 				utf2oem((char*)barcode).c_str(),
@@ -502,12 +591,32 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 				if (message.size() > 0) {
 					message = message + L", ";
 				}
-				message += L"Ошибка добавления товара";
+				message += L"Ошибка добавления товара " + s2ws(name);
+			}
+			else if (discount > 0) {
+				discount_percent = (discount / price) * 100;
+				libPrintRequsit(
+					0, 1,
+					(char*)utf2oem((char*)ws2s(
+						L"СКИДКА " + s2ws((char*)to_fixed(discount_percent).c_str()) + L"% =" + s2ws((char*)to_fixed(discount).c_str())
+					).c_str()).c_str(),
+					"","",""
+				);
 			}
 		}
 		// Подъитог
+		if (discount_sum > 0) {
+			libSubTotal();
+			err_code = libAddDiscount(1, "", discount_sum);
+			if (err_code > 0) {
+				if (message.size() > 0) {
+					message = message + L", ";
+				}
+				message += L"Ошибка добавления скидки";
+				goto NEXT;
+			}
+		}
 		err_code = libSubTotal();
-
 		if (err_code > 0) {
 			if (message.size() > 0) {
 				message = message + L", ";
@@ -516,7 +625,7 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 		}
 		else {
 			// добавление типа оплаты
-			err_code = libAddPayment(payment_type, sum, "");
+			err_code = libAddPayment(payment_type, amount, "");
 			if (err_code > 0) {
 				if (message.size() > 0) {
 					message = message + L", ";
@@ -532,7 +641,7 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 		message += L"Ошибка открытия документа";
 		libCancelDocument();
 	}
-
+NEXT:
 	if ((payment_error > 0  && error_open_doc == 0) || (err_code > 0 && is_open_doc)) {
 		libCancelDocument();
 	}
@@ -590,8 +699,8 @@ static PyMethodDef cashbox_functions[] = {
 	{ "new_transaction", (PyCFunction)cashbox_new_transaction, METH_VARARGS | METH_KEYWORDS, cashbox_new_transaction_doc },
 	{ "close_shift", (PyCFunction)cashbox_close_shift, METH_VARARGS | METH_KEYWORDS, cashbox_close_shift_doc },
 	{ "force_close_shift", (PyCFunction)cashbox_force_close_shift, METH_NOARGS, cashbox_force_close_shift_doc },
-	{ "set_zero_cash_drawer", (PyCFunction)cashbox_set_zero_cash_drawer, METH_NOARGS, cashbox_set_zero_cash_drawer_doc },
-	{ "last_z_report", (PyCFunction)cashbox_last_z_report, METH_NOARGS, cashbox_last_z_report_doc },
+	{ "set_zero_cash_drawer", (PyCFunction)cashbox_set_zero_cash_drawer, METH_VARARGS | METH_KEYWORDS, cashbox_set_zero_cash_drawer_doc },
+	{ "last_z_report", (PyCFunction)cashbox_last_z_report, METH_VARARGS | METH_KEYWORDS, cashbox_last_z_report_doc },
 	{ "cancel_payment_by_link", (PyCFunction)cashbox_cancel_payment_by_link, METH_VARARGS | METH_KEYWORDS, cashbox_cancel_payment_by_link_doc },
 	{ "kkt_info", (PyCFunction)cashbox_kkt_info, METH_NOARGS, cashbox_kkt_info_doc },
 	{ "handler_cash_drawer", (PyCFunction)cashbox_handler_cash_drawer, METH_VARARGS | METH_KEYWORDS, cashbox_handler_cash_drawer_doc },
@@ -605,7 +714,7 @@ static PyMethodDef cashbox_functions[] = {
 int exec_cashbox(PyObject *module) {
     PyModule_AddFunctions(module, cashbox_functions);
     PyModule_AddStringConstant(module, "__author__", "alex-proc");
-    PyModule_AddStringConstant(module, "__version__", "1.0.2");
+    PyModule_AddStringConstant(module, "__version__", "1.0.3");
     PyModule_AddIntConstant(module, "year", 2019);
     return 0; /* success */
 }
