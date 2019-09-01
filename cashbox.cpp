@@ -443,31 +443,17 @@ create new transaction\
 :param str cashier: - Cashier name\
 :return dict()");
 PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwargs) {
-	char* cashier;
-	char* rrn;
+	const char* cashier;
+	const char* rrn;
 	int payment_type = 0;
 	int doc_type = 0;
 	double amount = 0.0;
 	PyListObject *wares;
-
 	static char* keywords_all[] = { "cashier", "payment_type", "doc_type", "wares", "amount", "rrn", NULL };
-	static char* keywords_rrn[] = { "cashier", "payment_type", "doc_type", "wares", "rrn", NULL };
-	static char* keywords_amount[] = { "cashier", "payment_type", "doc_type", "wares", "amount", NULL };
-	static char* keywords[] = { "cashier", "payment_type", "doc_type", "wares", NULL };
 
-	bool parse_ok = PyArg_ParseTupleAndKeywords(args, kwargs, "siiOd|is", keywords_all, &cashier, &payment_type, &doc_type, &wares, &amount, &rrn);
-
+	bool parse_ok = PyArg_ParseTupleAndKeywords(args, kwargs, "siiO|ds", keywords_all, &cashier, &payment_type, &doc_type, &wares, &amount, &rrn);
 	if (!parse_ok) {
-		parse_ok = PyArg_ParseTupleAndKeywords(args, kwargs, "siiOs", keywords_rrn, &cashier, &payment_type, &doc_type, &wares, &rrn);
-	}
-	if (!parse_ok) {
-		parse_ok = PyArg_ParseTupleAndKeywords(args, kwargs, "siiOd|i", keywords_amount, &cashier, &payment_type, &doc_type, &wares, &amount);
-	}
-	if (!parse_ok) {
-		parse_ok = PyArg_ParseTupleAndKeywords(args, kwargs, "siiO", keywords, &cashier, &payment_type, &doc_type, &wares);
-	}
-	if (!parse_ok) {
-		PyErr_SetString(PyExc_ValueError, "Invalid args. allowed formats: 'cashier: str', 'payment_type: int', 'doc_type: int', 'wares: list', 'amount: float|int', 'rrn: str',");
+		PyErr_SetString(PyExc_ValueError, "Invalid args. allowed formats: 'cashier: str', 'payment_type: int', 'doc_type: int', 'wares: list', 'amount: float', 'rrn: str',");
 		return NULL;
 	}
 
@@ -526,10 +512,11 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 		else if (doc_type == 3) {
 			if (rrn == "") {
 				PyErr_SetString(PyExc_ValueError, ws2s(L"Отсутсвует параметр rrn(ссылка платежа)").c_str());
+				free(arcus);
 				return NULL;
 			}
 			else {
-				arcus->cancelByLink(rrn, (char*)to_string(amount).c_str());
+				arcus->cancelByLink((char*)rrn, (char*)to_string(amount).c_str());
 				payment_error = atoi(arcus->auth_data.responseCode);
 			}
 		}
@@ -539,13 +526,18 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 	}
 	else if (payment_type == 0) {
 		// Наличка
-		if (amount == 0) {
-			PyErr_SetString(PyExc_ValueError, ws2s(L"При наличном платеже требуется параметр 'amount'").c_str());
-			return NULL;
+		if (doc_type == 2) {
+			if (amount == 0) {
+				PyErr_SetString(PyExc_ValueError, ws2s(L"При наличном платеже требуется параметр 'amount'").c_str());
+				return NULL;
+			}
+			data["amount"] = PyFloat_FromDouble(amount);
+			amount = ceill(amount * 100);
+		}
+		else {
+			amount = sum - discount_sum;
 		}
 		data["delivery"] = PyFloat_FromDouble(ceil(amount - _sum - discount_sum / 100));
-		data["amount"] = PyFloat_FromDouble(amount);
-		amount *= 100;
 		libOpenCashDrawer(0); // Открыть денежный ящик
 	}
 
@@ -646,7 +638,7 @@ NEXT:
 		libCancelDocument();
 	}
 	if (payment_error == 0 && payment_type == 1 && error_open_doc > 0) {
-		arcus->cancelByLink(arcus->auth_data.rrn, (char*)to_string(sum).c_str());
+		arcus->cancelByLink(arcus->auth_data.rrn, (char*)to_string(amount).c_str());
 		int pyment_error = atoi(arcus->auth_data.responseCode);
 		if (pyment_error > 0) {
 			if (message.size() > 0) {
@@ -684,8 +676,7 @@ NEXT:
 	if (err_code == 0) {
 		addLastChequeInfo(&data);
 	}
-
-	delete arcus;
+	free(arcus);
 	return createPyDict(data);
 };
 
