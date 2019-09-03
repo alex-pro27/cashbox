@@ -491,7 +491,7 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 		double quantity = PyFloat_AsDouble(PyDict_GetItemString(ware, "quantity"));
 		_sum += price * quantity;
 		if (discount > 0) {
-			_discount_sum += discount * 100;
+			_discount_sum += discount;
 		}
 	}
 	sum = (long)round(_sum * 100);
