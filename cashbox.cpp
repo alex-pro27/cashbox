@@ -447,7 +447,7 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 	const char* rrn;
 	int payment_type = 0;
 	int doc_type = 0;
-	double amount = 0.0;
+	long double amount = 0;
 	PyListObject *wares;
 	static char* keywords_all[] = { "cashier", "payment_type", "doc_type", "wares", "amount", "rrn", NULL };
 
@@ -470,9 +470,10 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 	wstring message;
 	ArcusHandlers* arcus = NULL;
 	int err_code = 0;
-	long long sum = 0;
-	double _sum = 0.0;
-	int discount_sum = 0;
+	long sum = 0;
+	long double _sum = 0.0;
+	long discount_sum = 0;
+	long double _discount_sum = 0;
 	int num_depart = 1;
 	int error_open_doc = 0;
 	int payment_error = 0;
@@ -490,10 +491,13 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 		double quantity = PyFloat_AsDouble(PyDict_GetItemString(ware, "quantity"));
 		_sum += price * quantity;
 		if (discount > 0) {
-			discount_sum += ceil(discount * 100);
+			_discount_sum += discount * 100;
 		}
 	}
-	sum = ceill(_sum * 100);
+	sum = (long)round(_sum * 100);
+	if (_discount_sum > 0) {
+		discount_sum = (long)round(_discount_sum * 100);
+	}
 	data["transaction_sum"] = PyFloat_FromDouble(_sum);
 
 	if (payment_type == 1) {
@@ -502,13 +506,13 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 		arcus = new ArcusHandlers();
 		if (doc_type == 2) {
 			arcus->auth();
-			arcus->purchase((char*)to_string(amount).c_str());
+			arcus->purchase((char*)to_fixed(amount, 0).c_str());
 			payment_error = atoi(arcus->auth_data.responseCode);
 			data["rrn"] = PyUnicode_FromString(arcus->auth_data.rrn);
 			data["pan_card"] = PyUnicode_FromString(arcus->auth_data.pan);
 			string cardholder_name = trim(string(arcus->auth_data.cardholder_name));
 			data["cardholder_name"] = PyUnicode_FromString(cardholder_name.c_str());
-		} 
+		}
 		else if (doc_type == 3) {
 			if (rrn == "") {
 				PyErr_SetString(PyExc_ValueError, ws2s(L"Отсутсвует параметр rrn(ссылка платежа)").c_str());
@@ -516,7 +520,7 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 				return NULL;
 			}
 			else {
-				arcus->cancelByLink((char*)rrn, (char*)to_string(amount).c_str());
+				arcus->cancelByLink((char*)rrn, (char*)to_fixed(amount, 0).c_str());
 				payment_error = atoi(arcus->auth_data.responseCode);
 			}
 		}
@@ -532,12 +536,12 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 				return NULL;
 			}
 			data["amount"] = PyFloat_FromDouble(amount);
-			amount = ceill(amount * 100);
+			amount = round(amount * 100);
 		}
 		else {
 			amount = sum - discount_sum;
 		}
-		data["delivery"] = PyFloat_FromDouble(ceil(amount - _sum - discount_sum / 100));
+		data["delivery"] = PyFloat_FromDouble(ceill(amount - _sum - discount_sum / 100));
 		libOpenCashDrawer(0); // Открыть денежный ящик
 	}
 

@@ -178,7 +178,7 @@ void ArcusHandlers::auth() {
 
 void ArcusHandlers::purchase(char* amount) {
 	this->auth_data.operType = 1;
-	strncpy_s(this->auth_data.amount, sizeof(this->auth_data.amount), amount, sizeof(amount) * 4);
+	strncpy_s(this->auth_data.amount, lnAmount, amount, lnAmount);
 	this->apply();
 }
 
@@ -194,8 +194,8 @@ void ArcusHandlers::cancelLast() {
 
 void ArcusHandlers::cancelByLink(char* rrn, char* amount) {
 	this->auth_data.operType = 3;
-	strncpy_s(this->auth_data.rrn, sizeof(this->auth_data.rrn), rrn, sizeof(rrn) * 4);
-	strncpy_s(this->auth_data.amount, sizeof(this->auth_data.amount), amount, sizeof(amount) * 4);
+	strncpy_s(this->auth_data.rrn, lnRetrievalReference, rrn, lnRetrievalReference);
+	strncpy_s(this->auth_data.amount, lnAmount, amount, lnAmount);
 	this->apply();
 }
 
