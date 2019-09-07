@@ -42,13 +42,15 @@ enum {
 	lnTVR = 80,
 	lnCardholderName = 27,
 	lnTraceID = 61,
-	lnDateTime = 13
+	lnDateTime = 13,
+	lnTransactionID = 19
 };
 
 struct UserAuthIntFull {
 	int handle;
 	int abg_id;
 	int operType;							//[in] Код операции (кассовый)
+	//char payId[lnPayId];
 	char rfu[lnRFU];
 	char pan[lnPan];
 	char expiry[lnExpiry];
@@ -107,7 +109,7 @@ struct UserAuthIntFull {
 	char OriginalDateTime[lnDateTime];
 	unsigned short CashRecieptNumber;
 	char OutPutTransactionData[256];
-	char TransactionID[19];
+	char TransactionID[lnTransactionID];
 	char ComissionOffline[lnAmount];
 	char ComissionOfflineCurrency[lnCurrency];
 	char ComissionAcquirer[lnAmount];
@@ -194,7 +196,8 @@ void ArcusHandlers::cancelLast() {
 
 void ArcusHandlers::cancelByLink(char* rrn, char* amount) {
 	this->auth_data.operType = 3;
-	strncpy_s(this->auth_data.rrn, lnRetrievalReference, rrn, lnRetrievalReference);
+	//strncpy_s(this->auth_data.rrn, lnRetrievalReference, rrn, lnRetrievalReference);
+	strncpy_s(this->auth_data.TransactionID, lnTransactionID, rrn, lnTransactionID);
 	strncpy_s(this->auth_data.amount, lnAmount, amount, lnAmount);
 	this->apply();
 }

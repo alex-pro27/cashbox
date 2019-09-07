@@ -296,6 +296,9 @@ PyObject* cashbox_cancel_payment_by_link(PyObject* self, PyObject* args, PyObjec
 	arcus->cancelByLink(rrn, (char*)to_string(amount).c_str());
 	wstring message = s2ws(cp2utf((char*)arcus->auth_data.text_message));
 	int err_code = atoi(arcus->auth_data.responseCode);
+	if (err_code < 2) {
+		err_code = 0;
+	}
 	map<string, PyObject*> data = {
 		{"message", PyUnicode_FromWideChar(message.c_str(), message.size())},
 		{"error",  PyBool_FromLong(err_code)},
@@ -345,7 +348,6 @@ PyObject* cashbox_set_zero_cash_drawer(PyObject* self, PyObject* args, PyObject*
 					libOpenCashDrawer(0);
 				}
 			}
-			
 		}
 		map<string, PyObject*> data = {
 			{"message", PyUnicode_FromWideChar(message.c_str(), message.size())},
@@ -444,7 +446,7 @@ create new transaction\
 :return dict()");
 PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwargs) {
 	const char* cashier;
-	const char* rrn;
+	const char* rrn = "";
 	int payment_type = 0;
 	int doc_type = 0;
 	long double amount = 0;
@@ -453,7 +455,7 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 
 	bool parse_ok = PyArg_ParseTupleAndKeywords(args, kwargs, "siiO|ds", keywords_all, &cashier, &payment_type, &doc_type, &wares, &amount, &rrn);
 	if (!parse_ok) {
-		PyErr_SetString(PyExc_ValueError, "Invalid args. allowed formats: 'cashier: str', 'payment_type: int', 'doc_type: int', 'wares: list', 'amount: float', 'rrn: str',");
+		PyErr_SetString(PyExc_ValueError, "Invalid args. allowed formats: 'cashier: str', 'payment_type: int', 'doc_type: int', 'wares: list', 'amount: float', 'rrn: str'");
 		return NULL;
 	}
 
@@ -508,13 +510,18 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 			arcus->auth();
 			arcus->purchase((char*)to_fixed(amount, 0).c_str());
 			payment_error = atoi(arcus->auth_data.responseCode);
-			data["rrn"] = PyUnicode_FromString(arcus->auth_data.rrn);
+			if (strlen(arcus->auth_data.rrn) > 0) {
+				data["rrn"] = PyUnicode_FromString(arcus->auth_data.rrn);
+			}
+			else{
+				data["rrn"] = PyUnicode_FromString(arcus->auth_data.TransactionID);
+			}
 			data["pan_card"] = PyUnicode_FromString(arcus->auth_data.pan);
 			string cardholder_name = trim(string(arcus->auth_data.cardholder_name));
 			data["cardholder_name"] = PyUnicode_FromString(cardholder_name.c_str());
 		}
 		else if (doc_type == 3) {
-			if (rrn == "") {
+			if (strlen(rrn) == 0) {
 				PyErr_SetString(PyExc_ValueError, ws2s(L"Отсутсвует параметр rrn(ссылка платежа)").c_str());
 				free(arcus);
 				return NULL;
@@ -524,8 +531,12 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 				payment_error = atoi(arcus->auth_data.responseCode);
 			}
 		}
-		if (payment_error > 0) {
+		if (payment_error > 1) {
 			message = s2ws(cp2utf((char*)arcus->auth_data.text_message));
+			goto NEXT;
+		}
+		else {
+			payment_error = 0;
 		}
 	}
 	else if (payment_type == 0) {
@@ -638,15 +649,16 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 		libCancelDocument();
 	}
 NEXT:
-	if ((payment_error > 0  && error_open_doc == 0) || (err_code > 0 && is_open_doc)) {
+	if (error_open_doc || (err_code > 0 && is_open_doc)) {
 		libCancelDocument();
 	}
-	if (payment_error == 0 && payment_type == 1 && error_open_doc > 0) {
-		arcus->cancelByLink(arcus->auth_data.rrn, (char*)to_string(amount).c_str());
+	if (payment_error == 0 && payment_type == 1 && (error_open_doc > 0 || err_code > 0)) {
+		arcus->cancelLast();
 		int pyment_error = atoi(arcus->auth_data.responseCode);
-		if (pyment_error > 0) {
+		if (pyment_error > 1) {
 			if (message.size() > 0) {
 				message = message + L", ";
+				payment_error = 0;
 			}
 			message += s2ws(cp2utf((char*)arcus->auth_data.text_message));
 			if (error_open_doc == 0) {
@@ -709,7 +721,7 @@ static PyMethodDef cashbox_functions[] = {
 int exec_cashbox(PyObject *module) {
     PyModule_AddFunctions(module, cashbox_functions);
     PyModule_AddStringConstant(module, "__author__", "alex-proc");
-    PyModule_AddStringConstant(module, "__version__", "1.0.3");
+    PyModule_AddStringConstant(module, "__version__", "1.0.4");
     PyModule_AddIntConstant(module, "year", 2019);
     return 0; /* success */
 }
