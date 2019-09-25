@@ -162,12 +162,15 @@ void addKKTINFO(map<string, PyObject*> *data) {
 };
 
 
-int getNextDocNumber() {
+int getNextChequeNumber() {
 	string kktinfo = requestDecorator(2, libGetReceiptData);
 	auto s = split(kktinfo, "\x1c");
 	if (s.size()) {
-		int doc_number = stoi(s[3]);
-		return doc_number + 1;
+		auto cn = split(s[1], ".");
+		if (cn.size() > 1) {
+			int number = stoi(cn[1]);
+			return number + 1;
+		}
 	}
 	return 1;
 }
@@ -288,7 +291,7 @@ void printOrderNumber(const char* order_prefix) {
 		"\n      --------------------------------------------"
 		"\n \n";
 	std::wstringstream order_number;
-	order_number << order_prefix << getNextDocNumber();
+	order_number << s2ws(order_prefix) << getNextChequeNumber();
 	wstring to_replace(L"{order_number}");
 	print_str.replace(print_str.find(to_replace), to_replace.length(), order_number.str());
 	printStringInOpenDoc(ws2s(print_str).c_str());
