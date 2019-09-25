@@ -30,6 +30,12 @@ close_port()
 ```python
 open_shift("Имя кассира")
 ```
+
+Закрыть смену на пин-паде:
+```python
+close_shift_pin_pad("Имя кассира")
+```
+
 Закрыть смену:
 ```python
 close_shift("Имя кассира")
@@ -70,8 +76,18 @@ set_zero_cash_drawer(cashier)
 ],
 :param float or int amount: - Необязательный аргумент, Количество денег отданых кассиру передается в случае если оплата по наличному расчету
 :param str rrn: - Необязательный аргумент, ID Платежа, Передается в случае возврата, по безналичному платежу
+:param str print_strings: - Необязательный аргумент, печать строк в документе -
+- для перехода на новую строку добавьте символ переноса строки - \n
+- пример применения стилей для текста (по умолчанию стиль NORMAL )(
+	(font-style=NORMAL)Нормальный
+	\n(font-style=NORMAL_BOLD)Нормальный жирный
+	\n(font-style=MEDIUM)Средний
+	\n(font-style=BIG)Большой
+	\n(font-style=BIG_BOLD)Большой жирный
+	\n(font-style=SMALL)Маленький
+)
 """
-new_transaction(cashier, payment_type, doc_type, wares, amount, rrn)
+new_transaction(cashier, payment_type, doc_type, wares, amount, rrn, print_strings)
 ```
 Отменить безналичный платеж по ID
 ```python
@@ -123,4 +139,5 @@ cardholder_name str - Имя держателя карты
 transaction_sum float - Сумма транзакции
 delivery float - Сдача,
 amount float - Количество вносимых / изъятых денег
+datetime string - текущая дата и время фискального регистратора
 ```

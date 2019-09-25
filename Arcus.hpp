@@ -43,7 +43,8 @@ enum {
 	lnCardholderName = 27,
 	lnTraceID = 61,
 	lnDateTime = 13,
-	lnTransactionID = 19
+	lnTransactionID = 19,
+	lnCashierName = 102
 };
 
 struct UserAuthIntFull {
@@ -60,8 +61,7 @@ struct UserAuthIntFull {
 	char original_amount[lnAmount];			//[in] Оригинальная сумма в копейках
 	char currency[lnCurrency];				//[in] Код валюты
 	char terminalID[lnTerminalID];
-	char rrn[lnRetrievalReference];			//[in][out] Ссылка (только для операций для которых
-											//нужно, в остальных случаях - пуста)
+	char rrn[lnRetrievalReference];			//[in][out] Ссылка (только для операций для которых нужно, в остальных случаях - пуста)
 	char authCode[lnAuthIdentResponse];		//[out][in] Код авторизации
 	char responseCode[lnResponseCode];		//[out] Код ответа
 	char cardType[lnCardType];				//[out] Название типа карты
@@ -149,14 +149,14 @@ public:
 	ArcusHandlers();
 	~ArcusHandlers();
 	void auth(void);
+	void closeShift(void);
 	void purchase(char*);
-	void cancel();
 	void cancelLast();
 	void cancelByLink(char*, char*);
+	void universalCancel();
 	void apply();
 	string getCheque(void);
 };
-
 
 ArcusHandlers::ArcusHandlers() {
 	LPCSTR lib_path("C:\\Arcus2\\DLL\\ArcCom.dll");
@@ -178,25 +178,31 @@ void ArcusHandlers::auth() {
 	this->auth_data = auth_data;
 }
 
+void ArcusHandlers::closeShift() {
+	this->auth_data.operType = 11;
+	this->apply();
+}
+
 void ArcusHandlers::purchase(char* amount) {
 	this->auth_data.operType = 1;
 	strncpy_s(this->auth_data.amount, lnAmount, amount, lnAmount);
 	this->apply();
 }
 
-void ArcusHandlers::cancel() {
-	this->auth_data.operType = 3;
+void ArcusHandlers::cancelLast() {
+	// Отмена последней транзакции
+	this->auth_data.operType = 2;
 	this->apply();
 }
 
-void ArcusHandlers::cancelLast() {
-	this->auth_data.operType = 2;
+void ArcusHandlers::universalCancel() {
+	this->auth_data.operType = 4;
 	this->apply();
 }
 
 void ArcusHandlers::cancelByLink(char* rrn, char* amount) {
 	this->auth_data.operType = 3;
-	//strncpy_s(this->auth_data.rrn, lnRetrievalReference, rrn, lnRetrievalReference);
+	strncpy_s(this->auth_data.rrn, lnRetrievalReference, rrn, lnRetrievalReference);
 	strncpy_s(this->auth_data.TransactionID, lnTransactionID, rrn, lnTransactionID);
 	strncpy_s(this->auth_data.amount, lnAmount, amount, lnAmount);
 	this->apply();

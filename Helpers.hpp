@@ -112,6 +112,16 @@ namespace Helpers {
 	unsigned int get_mask(unsigned int pos, unsigned int n) {
 		return ~(~0 << n) << pos;
 	};
+
+	template <typename T, int N>
+	bool in_array(T arr[N], T needle) {
+		for (int i = 0; i < N; i++) {
+			if (arr[i] == needle) {
+				return true;
+			}
+		}
+		return false;
+	}
 }
 
 #endif

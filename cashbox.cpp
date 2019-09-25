@@ -2,6 +2,7 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <tuple>
 #include <regex>
 #include <map>
 #include <cmath>
@@ -51,6 +52,77 @@ void setParsedData(map<char*, int> keys, string kktinfo, map<string, PyObject*> 
 	}
 }
 
+std::tuple<int, wstring> getExError() {
+	MData inf = libGetExErrorInfo(1);
+	auto r = split(inf.data, "\x1c");
+	if (r.size() < 2) {
+		return std::make_tuple(0, L"");
+	}
+	int err_code = stoi(r[1]);
+	wstring message;
+	switch (err_code) {
+	case 1:
+		message = L"Не была вызвана функция “Начало работы”";
+		break;
+	case 2:
+		message = L"Не фискальный режим";
+		break;
+	case 3:
+		message = L"Архив ФН закрыт";
+		break;
+	case 4:
+		message = L"ФН не зарегистрирован";
+		break;
+	case 5:
+		message = L"ФН уже зарегистрирован";
+		break;
+	case 8:
+		message = L"Документ не был открыт";
+		break;
+	case 9:
+		message = L"Предыдущий документ не закрыт";
+		break;
+	case 15:
+		message = L"Документ закрыт в ФН";
+		break;
+	case 16:
+		message = L"Документ не является продажей (приходом) или возвратом (возвратом прихода)";
+		break;
+	case 17:
+		message = L"Документ не является внесением или изъятием";
+		break;
+	case 20:
+		message = L"Смена не открыта";
+		break;
+	case 21:
+		message = L"Фатальная ошибка ФН";
+		break;
+	case 22:
+		message = L"ФН не в режиме получения документа для ОФД";
+		break;
+	default:
+		err_code = 0;
+	}
+	return std::make_tuple(err_code, message);
+}
+
+std::tuple<int, wstring> checkStatusPrinter() {
+	std::tuple<int, wstring> err = getExError();
+	int err_code = std::get<0>(err);
+	wstring message = std::get<1>(err);
+	int fnd_stack[9]{ 2,3,4,5,8,15,20,21,22 };
+	if (err_code == 1) {
+		commandStart();
+	}
+	else if (err_code == 9) {
+		//libCancelDocument();
+	}
+	else if (in_array<int, 9>(fnd_stack, err_code)) {
+		return err;
+	}
+	return std::make_tuple(0, L"");
+}
+
 /* Получить сумму скидок/наценок */
 void addMarckupAndDiscountInfo(map<string, PyObject*> *data) {
 	string kktinfo = requestDecorator(9, libGetCountersAndRegisters);
@@ -76,6 +148,17 @@ void addKKTINFO(map<string, PyObject*> *data) {
 	}
 	/*Заводской номер фискальника*/
 	(*data)["fn_number"] = PyUnicode_FromString(requestDecorator(1, libGetKKTInfo).c_str());
+	
+	MData res = libGetPiritDateTime();
+	if (!res.errCode && res.dataLength) {
+		auto datetime = split(res.data, "\x1c");
+		std::stringstream stream;
+		std::regex date_pattern("(\\d{2})(\\d{2})(\\d{2})");
+		auto date = std::regex_replace(datetime[0].substr(6, datetime[0].size() - 6), date_pattern, "20$3-$2-$1");
+		auto time = std::regex_replace(datetime[1], date_pattern, "$1:$2:$3");
+		stream << date << "T" << time;
+		(*data)["datetime"] = PyUnicode_FromString(stream.str().c_str());
+	}
 };
 
 /* Информация о последнем чеке */
@@ -155,6 +238,64 @@ void printCheque() {
 	}
 };
 
+void printStringInOpenDoc(const char* print_strings) {
+	string str = utf2cp((char*)print_strings);
+	vector<string> print_str = split(str, "\n");
+	std::map <std::string, unsigned char> mapping;
+	mapping["BIG"] = 5;
+	mapping["BIG_BOLD"] = 6;
+	mapping["NORMAL_BOLD"] = 3;
+	mapping["NORMAL"] = 1;
+	mapping["MEDIUM"] = 0;
+	mapping["MEDIUM_BOLD"] = 2;
+	mapping["SMALL"] = 4;
+	std::regex pattern("\\(font-style=([A-Z_]+)\\)");
+	for (string line : print_str) {
+		std::smatch matches;
+		std::regex_search(line, matches, pattern);
+		unsigned char style = 1;
+		if (matches.size() > 0 && mapping[matches[1]] != NULL) {
+			style = mapping[matches[1]];
+		}
+		line = std::regex_replace(line.c_str(), pattern, "");
+		libPrintRequsit(0, style, (char*)cp2oem((char*)line.c_str()).c_str(), "", "", "");
+	}
+}
+
+PyDoc_STRVAR(cashbox_set_datetime_doc, "set_datetime(datetime)\
+set datetime for pirit\
+@param str datetime: - %Y-%m-%dT%H:%M:%S");
+PyObject* cashbox_set_datetime(PyObject* self, PyObject* args, PyObject* kwargs) {
+	const char* datetime; static char* keywords[] = { "datetime", NULL };
+	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "s", keywords, &datetime)) {
+		return NULL;
+	}
+	const std::regex date_pattern("(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})");
+	std::smatch datetime_match;
+	string dt(datetime);
+	std::regex_search(dt.cbegin(), dt.cend(), datetime_match, date_pattern);
+	if (datetime_match.size() == 0) {
+		PyErr_SetString(PyExc_ValueError, ws2s(L"Дата не соответсвует стандарту ISO8601(YYYY-MM-DDThh:mm:ss)").c_str());
+		return NULL;
+	}
+	int ee = 1;
+	PLDate date{
+		(int)stoi(datetime_match[1].str()) - 2000,
+		(unsigned char)stoi(datetime_match[2].str()),
+		(unsigned char)stoi(datetime_match[3].str())
+	};
+	PLTime time{
+		(unsigned char)stoi(datetime_match[4].str()),
+		(unsigned char)stoi(datetime_match[5].str()),
+		(unsigned char)stoi(datetime_match[6].str())
+	};
+
+	if (libSetPiritDateTime(date, time)) {
+		PyErr_SetString(PyExc_ValueError, ws2s(L"Ошибка изменения даты").c_str());
+	}
+	return NULL;
+}
+
 PyDoc_STRVAR(cashbox_open_port_doc, "open_port(port, speed)\
 \
 Open COM Port for Pirit");
@@ -192,18 +333,23 @@ Opening a cashier shift\
 :param str cashier: - Cashier name\
 :return dict()");
 PyObject* cashbox_open_shift(PyObject* self, PyObject* args, PyObject* kwargs) {
-	commandStart();
 	const char* cashier;
 	static char* keywords[] = { "cashier", NULL };
 	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "s", keywords, &cashier)) {
 		return NULL;
 	}
-
-	int err_code = libOpenShift((char*)utf2oem((char*)cashier).c_str());
-
+	std::tuple<int, wstring> res = checkStatusPrinter();
 	wstring st = L"Успешно";
-	if (err_code > 0)
-		st = L"Ошибка открытия смены";
+	int err_code = std::get<0>(res);
+	if (err_code) {
+		st = std::get<1>(res);
+	}
+	else {
+		err_code = libOpenShift((char*)utf2oem((char*)cashier).c_str());
+		if (err_code > 0) {
+			st = L"Ошибка открытия смены";
+		}
+	}
 
 	auto message = PyUnicode_FromWideChar(st.c_str(), st.size());
 	auto error = PyBool_FromLong(err_code);
@@ -224,13 +370,65 @@ PyObject* cashbox_open_shift(PyObject* self, PyObject* args, PyObject* kwargs) {
 	return createPyDict(data);
 };
 
+PyDoc_STRVAR(cashbox_close_shift_pin_pad_doc, "close_shift_pin_pad(cashier)\
+\
+Close a cashier shift for pin-pad\
+:param str cashier: - Cashier name\
+:return dict()");
+PyObject* cashbox_close_shift_pin_pad(PyObject* self, PyObject* args, PyObject* kwargs) {
+	const char* cashier;
+	static char* keywords[] = { "cashier", NULL };
+	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "s", keywords, &cashier)) {
+		return NULL;
+	}
+	std::tuple<int, wstring> res = checkStatusPrinter();
+	wstring st = L"Успешно";
+	map<string, PyObject*> data = {
+		{"cashier", PyUnicode_FromString(cashier)},
+	};
+	int err_code = std::get<0>(res);
+	if (err_code) {
+		st = std::get<1>(res);
+	}
+	else {
+		err_code = libOpenDocument(4, 1, (char*)utf2oem((char*)cashier).c_str(), 0);
+		wstring st;
+		if (!err_code) {
+			ArcusHandlers* arcus = new ArcusHandlers();
+			arcus->auth();
+			arcus->closeShift();
+			st = s2ws(cp2utf(arcus->auth_data.text_message).c_str());
+			data["message"] = PyUnicode_FromWideChar(st.c_str(), st.size());
+			err_code = atoi(arcus->auth_data.responseCode);
+			if (err_code < 10) {
+				err_code = 0;
+				printCheque();
+				libCutDocument();
+				libCancelDocument();
+				libCutDocument();
+			}
+			delete arcus;
+		}
+		if (err_code > 0) {
+			st = L"Ошибка закрытия пакета";
+		}
+	}
+
+	auto message = PyUnicode_FromWideChar(st.c_str(), st.size());
+	auto error = PyBool_FromLong(err_code);
+
+	data["error"] = error;
+	data["message"] = message;
+	data["error_code"] = PyLong_FromLong(err_code);
+	return createPyDict(data);
+}
+
 PyDoc_STRVAR(cashbox_close_shift_doc, "close_shift(cashier)\
 \
 Close a cashier shift\
 :param str cashier: - Cashier name\
 :return dict()");
 PyObject* cashbox_close_shift(PyObject* self, PyObject* args, PyObject* kwargs) {
-	commandStart();
 	const char* cashier;
 	static char* keywords[] = { "cashier", NULL };
 	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "s", keywords, &cashier)) {
@@ -239,14 +437,20 @@ PyObject* cashbox_close_shift(PyObject* self, PyObject* args, PyObject* kwargs) 
 	map<string, PyObject*> data = {
 		{"cashier", PyUnicode_FromString(cashier)},
 	};
-
-	int err_code = libPrintZReport((char*)utf2oem((char*)cashier).c_str(), 1);
-	addShiftNumber(&data, true);
-	addZReport(&data);
-
+	std::tuple<int, wstring> res = checkStatusPrinter();
 	wstring st = L"Успешно";
-	if (err_code > 0)
-		st = L"Ошибка закрытия смены";
+	int err_code = std::get<0>(res);
+	if (err_code) {
+		st = std::get<1>(res);
+	}
+	else {
+		err_code = libPrintZReport((char*)utf2oem((char*)cashier).c_str(), 1);
+		addShiftNumber(&data, true);
+		addZReport(&data);
+		if (err_code > 0) {
+			st = L"Ошибка закрытия смены";
+		}
+	}
 
 	auto message = PyUnicode_FromWideChar(st.c_str(), st.size());
 	auto error = PyBool_FromLong(err_code);
@@ -254,7 +458,6 @@ PyObject* cashbox_close_shift(PyObject* self, PyObject* args, PyObject* kwargs) 
 	data["error"] = error;
 	data["message"] = message;
 	data["error_code"] = PyLong_FromLong(err_code);
-
 	return createPyDict(data);
 };
 
@@ -262,19 +465,23 @@ PyDoc_STRVAR(cashbox_force_close_shift_doc, "force_close_shift()\
 Force close a cashier shift\
 :return dict()");
 PyObject* cashbox_force_close_shift(PyObject* self) {
-	commandStart();
 	map<string, PyObject*> data = {};
-	int err_code = libEmergencyCloseShift();
-	addShiftNumber(&data, true);
-	addZReport(&data);
+	std::tuple<int, wstring> res = checkStatusPrinter();
 	wstring st = L"Успешно";
-	if (err_code > 0)
-		st = L"Ошибка закрытия смены";
-
-	auto message = PyUnicode_FromWideChar(st.c_str(), st.size());
-	auto error = PyBool_FromLong(err_code);
-	data["message"] = message;
-	data["error"] = error;
+	int err_code = std::get<0>(res);
+	if (err_code) {
+		st = std::get<1>(res);
+	}
+	else {
+		err_code = libEmergencyCloseShift();
+		addShiftNumber(&data, true);
+		addZReport(&data);
+		if (err_code > 0) {
+			st = L"Ошибка закрытия смены";
+		}
+	}
+	data["message"] = PyUnicode_FromWideChar(st.c_str(), st.size());;
+	data["error"] = PyBool_FromLong(err_code);
 	data["error_code"] = PyLong_FromLong(err_code);
 	return createPyDict(data);
 };
@@ -296,7 +503,7 @@ PyObject* cashbox_cancel_payment_by_link(PyObject* self, PyObject* args, PyObjec
 	arcus->cancelByLink(rrn, (char*)to_string(amount).c_str());
 	wstring message = s2ws(cp2utf((char*)arcus->auth_data.text_message));
 	int err_code = atoi(arcus->auth_data.responseCode);
-	if (err_code < 2) {
+	if (err_code < 10) {
 		err_code = 0;
 	}
 	map<string, PyObject*> data = {
@@ -314,50 +521,61 @@ Reset cash drawer \
 PyObject* cashbox_set_zero_cash_drawer(PyObject* self, PyObject* args, PyObject* kwargs) {
 	char* cashier;
 	int err_code = 0;
-	wstring message = L"Успешно";
 	static char* keywords[] = { "cashier", NULL };
 	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "s", keywords, &cashier)) {
 		return NULL;
 	}
-	string _cash_balance = requestDecorator(7, libGetKKTInfo);
-	if (_cash_balance != "") {
-		long double cash_balance = stold(_cash_balance);
-		if (cash_balance == 0) {
-			PyErr_SetString(PyExc_ValueError, ws2s(L"В денежном ящике нет наличных").c_str());
-			return NULL;
-		}
-		err_code = libOpenDocument(5, 1, (char*)utf2oem(cashier).c_str(), 0);
-		if (err_code > 0) {
-			message = L"Не удалось открыть документ";
-			libCancelDocument();
+	std::tuple<int, wstring> res = checkStatusPrinter();
+	wstring st = L"Успешно";
+	err_code = std::get<0>(res);
+	if (err_code) {
+		st = std::get<1>(res);
+	}
+	else {
+		string _cash_balance = requestDecorator(7, libGetKKTInfo);
+		if (!_cash_balance.size()) {
+			err_code = 1;
+			st = L"Не удалось получить баланс в денежном ящике";
 		}
 		else {
-			err_code = libCashInOut("", ceill(cash_balance * 100));
+			long double cash_balance = stold(_cash_balance);
+			if (cash_balance == 0) {
+				st = L"В Денежном ящике нет наличных";
+				err_code = 2;
+				goto SEND_DATA;
+			}
+			err_code = libOpenDocument(5, 1, (char*)utf2oem(cashier).c_str(), 0);
 			if (err_code > 0) {
-				message = L"Ошибка внесения/изъятия";
+				st = L"Не удалось открыть документ";
 				libCancelDocument();
 			}
 			else {
-				MData ans = libCloseDocument(0);
-				if (ans.errCode > 0) {
+				err_code = libCashInOut("", ceill(cash_balance * 100));
+				if (err_code > 0) {
+					st = L"Ошибка внесения/изъятия";
 					libCancelDocument();
-					err_code = ans.errCode;
-					message = L"Не удалось закрыть документ";
 				}
 				else {
-					libOpenCashDrawer(0);
+					MData ans = libCloseDocument(0);
+					if (ans.errCode > 0) {
+						libCancelDocument();
+						err_code = ans.errCode;
+						st = L"Не удалось закрыть документ";
+					}
+					else {
+						libOpenCashDrawer(0);
+					}
 				}
 			}
 		}
-		map<string, PyObject*> data = {
-			{"message", PyUnicode_FromWideChar(message.c_str(), message.size())},
-			{"error",  PyBool_FromLong(err_code)},
-			{"error_code", PyLong_FromLong(err_code)},
-		};
-		return createPyDict(data);
 	}
-	PyErr_SetString(PyExc_ValueError, ws2s(L"Не удалось получить баланс в денежном ящике").c_str());
-	return NULL;
+SEND_DATA:
+	map<string, PyObject*> data = {
+		{"message", PyUnicode_FromWideChar(st.c_str(), st.size())},
+		{"error",  PyBool_FromLong(err_code)},
+		{"error_code", PyLong_FromLong(err_code)},
+	};
+	return createPyDict(data);
 };
 
 PyDoc_STRVAR(cashbox_handler_cash_drawer_doc, "handler_cash_drawer(cashier, amount, doc_type)\
@@ -365,7 +583,7 @@ Handler cash drawer \
 :return dict()");
 PyObject* cashbox_handler_cash_drawer(PyObject* self, PyObject* args, PyObject* kwargs) {
 	int err_code = 0;
-	wstring message = L"Успешно";
+	wstring st = L"Успешно";
 	char* cashier;
 	int amount = 0;
 	int doc_type = 0;
@@ -377,33 +595,39 @@ PyObject* cashbox_handler_cash_drawer(PyObject* self, PyObject* args, PyObject* 
 		PyErr_SetString(PyExc_ValueError, ws2s(L"Неверный тип документа (4 - внесение, 5 - изъятие)").c_str());
 		return NULL;
 	}
-	
-	err_code = libOpenDocument(doc_type, 1, (char*)utf2oem(cashier).c_str(), 0);
-	if (err_code > 0) {
-		message = L"Не удалось открыть документ";
-		libCancelDocument();
-	}
+	std::tuple<int, wstring> res = checkStatusPrinter();
+	err_code = std::get<0>(res);
+	if (err_code) {
+		st = std::get<1>(res);
+	} 
 	else {
-		err_code = libCashInOut("", amount);
+		err_code = libOpenDocument(doc_type, 1, (char*)utf2oem(cashier).c_str(), 0);
 		if (err_code > 0) {
-			message = L"Ошибка внесения/изъятия";
+			st = L"Не удалось открыть документ";
 			libCancelDocument();
 		}
 		else {
-			MData ans = libCloseDocument(0);
-			if (ans.errCode > 0) {
+			err_code = libCashInOut("", amount);
+			if (err_code > 0) {
+				st = L"Ошибка внесения/изъятия";
 				libCancelDocument();
-				err_code = ans.errCode;
-				message = L"Не удалось закрыть документ";
-			} 
+			}
 			else {
-				libOpenCashDrawer(0);
+				MData ans = libCloseDocument(0);
+				if (ans.errCode > 0) {
+					libCancelDocument();
+					err_code = ans.errCode;
+					st = L"Не удалось закрыть документ";
+				}
+				else {
+					libOpenCashDrawer(0);
+				}
 			}
 		}
 	}
 	
 	map<string, PyObject*> data = {
-		{"message", PyUnicode_FromWideChar(message.c_str(), message.size())},
+		{"message", PyUnicode_FromWideChar(st.c_str(), st.size())},
 		{"error",  PyBool_FromLong(err_code)},
 		{"error_code", PyLong_FromLong(err_code)},
 	};
@@ -440,22 +664,38 @@ PyObject* cashbox_kkt_info(PyObject* self) {
 	return createPyDict(data);
 };
 
-PyDoc_STRVAR(cashbox_new_transaction_doc, "new_transaction(cashier, payment_type, doc_type, wares, amount, rrn)\
+PyDoc_STRVAR(cashbox_new_transaction_doc, "new_transaction(cashier, payment_type, doc_type, wares, amount, rrn, print_strings)\
 create new transaction\
 :param str cashier: - Cashier name\
 :return dict()");
 PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwargs) {
 	const char* cashier;
 	const char* rrn = "";
+	const char* print_strings = "";
 	int payment_type = 0;
 	int doc_type = 0;
 	long double amount = 0;
 	PyListObject *wares;
-	static char* keywords_all[] = { "cashier", "payment_type", "doc_type", "wares", "amount", "rrn", NULL };
+	static char* keywords_all[] = { "cashier", "payment_type", "doc_type", "wares", "amount", "rrn", "print_strings", NULL };
 
-	bool parse_ok = PyArg_ParseTupleAndKeywords(args, kwargs, "siiO|ds", keywords_all, &cashier, &payment_type, &doc_type, &wares, &amount, &rrn);
+	bool parse_ok = PyArg_ParseTupleAndKeywords(
+		args, 
+		kwargs,
+		"siiO|dss",
+		keywords_all,
+		&cashier,
+		&payment_type,
+		&doc_type,
+		&wares,
+		&amount,
+		&rrn,
+		&print_strings
+	);
 	if (!parse_ok) {
-		PyErr_SetString(PyExc_ValueError, "Invalid args. allowed formats: 'cashier: str', 'payment_type: int', 'doc_type: int', 'wares: list', 'amount: float', 'rrn: str'");
+		PyErr_SetString(
+			PyExc_ValueError,
+			"Invalid args. allowed formats: 'cashier: str', 'payment_type: int', 'doc_type: int', 'wares: list', 'amount: float', 'rrn: str'"
+		);
 		return NULL;
 	}
 
@@ -481,6 +721,16 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 	int payment_error = 0;
 	bool is_open_doc = false;
 	map<string, PyObject*> data = {};
+
+	std::tuple<int, wstring> res = checkStatusPrinter();
+	err_code = std::get<0>(res);
+	if (std::get<0>(res)) {
+		message = std::get<1>(res);
+		data["message"] = PyUnicode_FromWideChar(message.c_str(), message.size());
+		data["error"] = PyBool_FromLong(err_code);
+		data["error_code"] = PyLong_FromLong(err_code);
+		return createPyDict(data);
+	}
 
 	for (int i = 0; i < wares->allocated; i++) {
 		PyObject *ware = wares->ob_item[i];
@@ -521,15 +771,13 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 			data["cardholder_name"] = PyUnicode_FromString(cardholder_name.c_str());
 		}
 		else if (doc_type == 3) {
-			if (strlen(rrn) == 0) {
-				PyErr_SetString(PyExc_ValueError, ws2s(L"Отсутсвует параметр rrn(ссылка платежа)").c_str());
-				free(arcus);
-				return NULL;
+			if (strlen(rrn) > 0) {
+				arcus->cancelByLink((char*)rrn, (char*)to_fixed(amount, 0).c_str());
 			}
 			else {
-				arcus->cancelByLink((char*)rrn, (char*)to_fixed(amount, 0).c_str());
-				payment_error = atoi(arcus->auth_data.responseCode);
+				arcus->universalCancel();
 			}
+			payment_error = atoi(arcus->auth_data.responseCode);
 		}
 		if (payment_error > 1) {
 			message = s2ws(cp2utf((char*)arcus->auth_data.text_message));
@@ -566,11 +814,14 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 	
 	if (error_open_doc == 0) {
 		if (payment_type == 1 && payment_error == 0) {
-			// Если безнали, то печатаем чек оплаты
+			// Если безнал, то печатаем чек оплаты
 			printCheque();
 			libCutDocument();
 		}
 		is_open_doc = true;
+		if (strlen(print_strings) > 1) {
+			printStringInOpenDoc(print_strings);
+		}
 		for (int i = 0; i < wares->allocated; i++) {
 			PyObject* ware = wares->ob_item[i];
 			const char* name = PyUnicode_AsUTF8(PyDict_GetItemString(ware, "name"));
@@ -603,7 +854,7 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 			else if (discount > 0) {
 				discount_percent = (discount / price) * 100;
 				libPrintRequsit(
-					0, 1,
+					0, 3,
 					(char*)utf2oem((char*)ws2s(
 						L"СКИДКА " + s2ws((char*)to_fixed(discount_percent).c_str()) + L"% =" + s2ws((char*)to_fixed(discount).c_str())
 					).c_str()).c_str(),
@@ -711,6 +962,8 @@ static PyMethodDef cashbox_functions[] = {
 	{ "cancel_payment_by_link", (PyCFunction)cashbox_cancel_payment_by_link, METH_VARARGS | METH_KEYWORDS, cashbox_cancel_payment_by_link_doc },
 	{ "kkt_info", (PyCFunction)cashbox_kkt_info, METH_NOARGS, cashbox_kkt_info_doc },
 	{ "handler_cash_drawer", (PyCFunction)cashbox_handler_cash_drawer, METH_VARARGS | METH_KEYWORDS, cashbox_handler_cash_drawer_doc },
+	{ "close_shift_pin_pad", (PyCFunction)cashbox_close_shift_pin_pad, METH_VARARGS | METH_KEYWORDS, cashbox_close_shift_pin_pad_doc },
+	{ "set_datetime", (PyCFunction)cashbox_set_datetime, METH_VARARGS | METH_KEYWORDS, cashbox_set_datetime_doc },
     { NULL, NULL, 0, NULL } /* marks end of array */
 };
 
@@ -721,7 +974,7 @@ static PyMethodDef cashbox_functions[] = {
 int exec_cashbox(PyObject *module) {
     PyModule_AddFunctions(module, cashbox_functions);
     PyModule_AddStringConstant(module, "__author__", "alex-proc");
-    PyModule_AddStringConstant(module, "__version__", "1.0.4");
+    PyModule_AddStringConstant(module, "__version__", "1.0.5");
     PyModule_AddIntConstant(module, "year", 2019);
     return 0; /* success */
 }
