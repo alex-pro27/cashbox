@@ -161,6 +161,17 @@ void addKKTINFO(map<string, PyObject*> *data) {
 	}
 };
 
+
+int getNextDocNumber() {
+	string kktinfo = requestDecorator(2, libGetReceiptData);
+	auto s = split(kktinfo, "\x1c");
+	if (s.size()) {
+		int doc_number = stoi(s[3]);
+		return doc_number + 1;
+	}
+	return 1;
+}
+
 /* Информация о последнем чеке */
 void addLastChequeInfo(map<string, PyObject*> *data) {
 	string kktinfo = requestDecorator(2, libGetReceiptData);
@@ -189,6 +200,13 @@ void addProgressiveTotalSales(map<string, PyObject*> *data) {
 		setParsedData(keys, kktinfo, data);
 	}
 };
+
+void addExError(map<string, PyObject*>* data) {
+	auto ex_err = getExError();
+	if (std::get<0>(ex_err)) {
+		(*data)["description_error"] = PyUnicode_FromWideChar(std::get<1>(ex_err).c_str(), std::get<1>(ex_err).size());
+	}
+}
 
 void addShiftNumber(map<string, PyObject*>* data, bool prev = false) {
 	string shift_number = requestDecorator(1, libGetCountersAndRegisters);
@@ -258,13 +276,27 @@ void printStringInOpenDoc(const char* print_strings) {
 			style = mapping[matches[1]];
 		}
 		line = std::regex_replace(line.c_str(), pattern, "");
-		libPrintRequsit(0, style, (char*)cp2oem((char*)line.c_str()).c_str(), "", "", "");
+		libPrintRequsit(0, style,(char*)cp2oem((char*)line.c_str()).c_str(), "", "", "");
 	}
+}
+
+void printOrderNumber(const char* order_prefix) {
+	wstring print_str = L"\n \n"
+		"\n      --------------------------------------------"
+		"\n(font-style=BIG_BOLD)      НОМЕР ЗАКАЗА:" 
+		"\n(font-style=BIG_BOLD)          {order_number}"
+		"\n      --------------------------------------------"
+		"\n \n";
+	std::wstringstream order_number;
+	order_number << order_prefix << getNextDocNumber();
+	wstring to_replace(L"{order_number}");
+	print_str.replace(print_str.find(to_replace), to_replace.length(), order_number.str());
+	printStringInOpenDoc(ws2s(print_str).c_str());
 }
 
 PyDoc_STRVAR(cashbox_set_datetime_doc, "set_datetime(datetime)\
 set datetime for pirit\
-@param str datetime: - %Y-%m-%dT%H:%M:%S");
+:param str datetime: - %Y-%m-%dT%H:%M:%S");
 PyObject* cashbox_set_datetime(PyObject* self, PyObject* args, PyObject* kwargs) {
 	const char* datetime; static char* keywords[] = { "datetime", NULL };
 	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "s", keywords, &datetime)) {
@@ -360,6 +392,8 @@ PyObject* cashbox_open_shift(PyObject* self, PyObject* args, PyObject* kwargs) {
 		{"error_code", PyLong_FromLongLong(err_code)},
 		{"cashier", PyUnicode_FromString(cashier)},
 	};
+
+	addExError(&data);
 	
 	if (err_code == 0) {
 		addKKTINFO(&data);
@@ -420,6 +454,7 @@ PyObject* cashbox_close_shift_pin_pad(PyObject* self, PyObject* args, PyObject* 
 	data["error"] = error;
 	data["message"] = message;
 	data["error_code"] = PyLong_FromLong(err_code);
+	addExError(&data);
 	return createPyDict(data);
 }
 
@@ -458,6 +493,7 @@ PyObject* cashbox_close_shift(PyObject* self, PyObject* args, PyObject* kwargs) 
 	data["error"] = error;
 	data["message"] = message;
 	data["error_code"] = PyLong_FromLong(err_code);
+	addExError(&data);
 	return createPyDict(data);
 };
 
@@ -483,6 +519,7 @@ PyObject* cashbox_force_close_shift(PyObject* self) {
 	data["message"] = PyUnicode_FromWideChar(st.c_str(), st.size());;
 	data["error"] = PyBool_FromLong(err_code);
 	data["error_code"] = PyLong_FromLong(err_code);
+	addExError(&data);
 	return createPyDict(data);
 };
 
@@ -575,6 +612,7 @@ SEND_DATA:
 		{"error",  PyBool_FromLong(err_code)},
 		{"error_code", PyLong_FromLong(err_code)},
 	};
+	addExError(&data);
 	return createPyDict(data);
 };
 
@@ -625,13 +663,13 @@ PyObject* cashbox_handler_cash_drawer(PyObject* self, PyObject* args, PyObject* 
 			}
 		}
 	}
-	
 	map<string, PyObject*> data = {
 		{"message", PyUnicode_FromWideChar(st.c_str(), st.size())},
 		{"error",  PyBool_FromLong(err_code)},
 		{"error_code", PyLong_FromLong(err_code)},
 	};
 	addKKTINFO(&data);
+	addExError(&data);
 	return createPyDict(data);
 };
 
@@ -664,7 +702,7 @@ PyObject* cashbox_kkt_info(PyObject* self) {
 	return createPyDict(data);
 };
 
-PyDoc_STRVAR(cashbox_new_transaction_doc, "new_transaction(cashier, payment_type, doc_type, wares, amount, rrn, print_strings)\
+PyDoc_STRVAR(cashbox_new_transaction_doc, "new_transaction(cashier, payment_type, doc_type, wares, amount, rrn, order_prefix, print_strings)\
 create new transaction\
 :param str cashier: - Cashier name\
 :return dict()");
@@ -672,16 +710,17 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 	const char* cashier;
 	const char* rrn = "";
 	const char* print_strings = "";
+	const char* order_prefix = "";
 	int payment_type = 0;
 	int doc_type = 0;
 	long double amount = 0;
 	PyListObject *wares;
-	static char* keywords_all[] = { "cashier", "payment_type", "doc_type", "wares", "amount", "rrn", "print_strings", NULL };
+	static char* keywords_all[] = { "cashier", "payment_type", "doc_type", "wares", "amount", "rrn", "order_prefix", "print_strings", NULL };
 
 	bool parse_ok = PyArg_ParseTupleAndKeywords(
 		args, 
 		kwargs,
-		"siiO|dss",
+		"siiO|dsss",
 		keywords_all,
 		&cashier,
 		&payment_type,
@@ -689,6 +728,7 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 		&wares,
 		&amount,
 		&rrn,
+		&order_prefix,
 		&print_strings
 	);
 	if (!parse_ok) {
@@ -800,7 +840,7 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 		else {
 			amount = sum - discount_sum;
 		}
-		data["delivery"] = PyFloat_FromDouble(ceill(amount - _sum - discount_sum / 100));
+		data["delivery"] = PyFloat_FromDouble((long int)ceill(amount - _sum - discount_sum / 100));
 		libOpenCashDrawer(0); // Открыть денежный ящик
 	}
 
@@ -819,7 +859,10 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 			libCutDocument();
 		}
 		is_open_doc = true;
-		if (strlen(print_strings) > 1) {
+		if (strlen(order_prefix) > 0) {
+			printOrderNumber(order_prefix);
+		}
+		if (strlen(print_strings) > 0) {
 			printStringInOpenDoc(print_strings);
 		}
 		for (int i = 0; i < wares->allocated; i++) {
@@ -935,6 +978,7 @@ NEXT:
 		}
 	}
 
+	addExError(&data);
 	data["message"] = PyUnicode_FromWideChar(message.c_str(), message.size());
 	data["error"] = PyBool_FromLong(err_code);
 	data["error_code"] = PyLong_FromLong(err_code);
@@ -974,7 +1018,7 @@ static PyMethodDef cashbox_functions[] = {
 int exec_cashbox(PyObject *module) {
     PyModule_AddFunctions(module, cashbox_functions);
     PyModule_AddStringConstant(module, "__author__", "alex-proc");
-    PyModule_AddStringConstant(module, "__version__", "1.0.5");
+    PyModule_AddStringConstant(module, "__version__", "1.0.6");
     PyModule_AddIntConstant(module, "year", 2019);
     return 0; /* success */
 }

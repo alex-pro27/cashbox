@@ -10,7 +10,7 @@ sfc_module = Extension(
 )
 
 setup(
-    name = 'cashbox', version = '1.0.5',
+    name = 'cashbox', version = '1.0.6',
     description = 'Python Package with superfastcode C++ extension',
     #ext_modules = [sfc_module],
     data_files=[('lib/site-packages',['./PiritLib.dll', './cashbox.pyd'])],
