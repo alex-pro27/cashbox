@@ -3,7 +3,7 @@
 #### Пин-пад Ingenico IPP 320/350 (Arcus)
 #### Фискальный регистратор Pirit2f
 
-Системные требования Windows >= 7, Python(x32) >= 3.7.3
+Системные требования Windows >= 7, Python(x32) >= 3.7.4
 
 ### Установка:
 
@@ -93,10 +93,10 @@ new_transaction(cashier, payment_type, doc_type, wares, amount, rrn, print_strin
 Отменить безналичный платеж по ID
 ```python
 """
-:param str rrn: ID Платежа (Ссылка)
 :param int amount: Сумма в копейках
+:param str rrn: ID Платежа (Ссылка)
 """
-cancel_payment_by_link(rrn, amount)
+cancel_payment_by_link(amount, rrn)
 ```
 Внесение/Изъятие из денежного ящика
 ```python

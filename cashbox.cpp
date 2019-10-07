@@ -137,6 +137,19 @@ void addMarckupAndDiscountInfo(map<string, PyObject*> *data) {
 	}
 }
 
+void addDateTime(map<string, PyObject*>* data) {
+	MData res = libGetPiritDateTime();
+	if (!res.errCode && res.dataLength) {
+		auto datetime = split(res.data, "\x1c");
+		std::stringstream stream;
+		std::regex date_pattern("(\\d{2})(\\d{2})(\\d{2})");
+		auto date = std::regex_replace(datetime[0].substr(6, datetime[0].size() - 6), date_pattern, "20$3-$2-$1");
+		auto time = std::regex_replace(datetime[1], date_pattern, "$1:$2:$3");
+		stream << date << "T" << time;
+		(*data)["datetime"] = PyUnicode_FromString(stream.str().c_str());
+	}
+}
+
 /* Информация о фискальнике */
 void addKKTINFO(map<string, PyObject*> *data) {
 	/*ИНН*/
@@ -148,31 +161,29 @@ void addKKTINFO(map<string, PyObject*> *data) {
 	}
 	/*Заводской номер фискальника*/
 	(*data)["fn_number"] = PyUnicode_FromString(requestDecorator(1, libGetKKTInfo).c_str());
-	
-	MData res = libGetPiritDateTime();
-	if (!res.errCode && res.dataLength) {
-		auto datetime = split(res.data, "\x1c");
-		std::stringstream stream;
-		std::regex date_pattern("(\\d{2})(\\d{2})(\\d{2})");
-		auto date = std::regex_replace(datetime[0].substr(6, datetime[0].size() - 6), date_pattern, "20$3-$2-$1");
-		auto time = std::regex_replace(datetime[1], date_pattern, "$1:$2:$3");
-		stream << date << "T" << time;
-		(*data)["datetime"] = PyUnicode_FromString(stream.str().c_str());
-	}
+	addDateTime(data);
 };
 
-
-int getNextChequeNumber() {
+string getChequeNumber() {
 	string kktinfo = requestDecorator(2, libGetReceiptData);
 	auto s = split(kktinfo, "\x1c");
 	if (s.size()) {
-		auto cn = split(s[1], ".");
+		return s[1];
+	}
+	return string("");
+}
+
+int getNextChequeNumber() {
+	string cheque_number = getChequeNumber();
+	if (cheque_number != "") {
+		auto cn = split(cheque_number, ".");
 		if (cn.size() > 1) {
 			int number = stoi(cn[1]);
 			return number + 1;
 		}
+		return 1;
 	}
-	return 1;
+	return 0;
 }
 
 /* Информация о последнем чеке */
@@ -180,7 +191,6 @@ void addLastChequeInfo(map<string, PyObject*> *data) {
 	string kktinfo = requestDecorator(2, libGetReceiptData);
 	if (kktinfo != "") {
 		map<char*, int> keys = {
-			{"check_number", 1},			// Номер чека
 			{"doc_number", 3},				// Номер документа
 			{"discount_sum", 5},			// Сумма скидки по чеку
 			{"discount_marckup_sum", 6},	// Сумма скидки наценки по чеку
@@ -188,12 +198,12 @@ void addLastChequeInfo(map<string, PyObject*> *data) {
 			{"fd", 8},						// фискальный документ
 		};
 		setParsedData(keys, kktinfo, data);
+		(*data)["check_number"] = PyUnicode_FromString(getChequeNumber().c_str()); // Номер чека
 	}
 };
 
 /* Нарастающий итог */
 void addProgressiveTotalSales(map<string, PyObject*> *data) {
-	/* Нарастающий итог */
 	string kktinfo = requestDecorator(12, libGetKKTInfo);
 	if (kktinfo != "") {
 		map<char*, int> keys = {
@@ -204,6 +214,7 @@ void addProgressiveTotalSales(map<string, PyObject*> *data) {
 	}
 };
 
+/* Расширенная информация об ошибке */
 void addExError(map<string, PyObject*>* data) {
 	auto ex_err = getExError();
 	if (std::get<0>(ex_err)) {
@@ -211,6 +222,7 @@ void addExError(map<string, PyObject*>* data) {
 	}
 }
 
+/* Номер смены */
 void addShiftNumber(map<string, PyObject*>* data, bool prev = false) {
 	string shift_number = requestDecorator(1, libGetCountersAndRegisters);
 	if (shift_number != "") {
@@ -432,11 +444,9 @@ PyObject* cashbox_close_shift_pin_pad(PyObject* self, PyObject* args, PyObject* 
 		wstring st;
 		if (!err_code) {
 			ArcusHandlers* arcus = new ArcusHandlers();
-			arcus->auth();
-			arcus->closeShift();
-			st = s2ws(cp2utf(arcus->auth_data.text_message).c_str());
+			err_code = arcus->closeShift();
+			st = s2ws(cp2utf(arcus->getMessage()).c_str());
 			data["message"] = PyUnicode_FromWideChar(st.c_str(), st.size());
-			err_code = atoi(arcus->auth_data.responseCode);
 			if (err_code < 10) {
 				err_code = 0;
 				printCheque();
@@ -534,15 +544,13 @@ Cancel payment by link \
 PyObject* cashbox_cancel_payment_by_link(PyObject* self, PyObject* args, PyObject* kwargs) {
 	char* rrn = "";
 	int amount = 0;
-	static char* keywords[] = { "rrn", "amount", NULL };
-	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "si", keywords, &rrn, &amount)) {
+	static char* keywords[] = { "amount", "rrn", NULL };
+	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "i|s", keywords, &amount, &rrn)) {
 		return NULL;
 	}
 	ArcusHandlers* arcus = new ArcusHandlers();
-	arcus->auth();
-	arcus->cancelByLink(rrn, (char*)to_string(amount).c_str());
-	wstring message = s2ws(cp2utf((char*)arcus->auth_data.text_message));
-	int err_code = atoi(arcus->auth_data.responseCode);
+	int err_code = arcus->cancelByLink((char*)to_string(amount).c_str(), rrn);
+	wstring message = s2ws(cp2utf((char*)arcus->getMessage()));
 	if (err_code < 10) {
 		err_code = 0;
 	}
@@ -800,34 +808,18 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 		amount = sum - discount_sum;
 		arcus = new ArcusHandlers();
 		if (doc_type == 2) {
-			arcus->auth();
-			arcus->purchase((char*)to_fixed(amount, 0).c_str());
-			payment_error = atoi(arcus->auth_data.responseCode);
-			if (strlen(arcus->auth_data.rrn) > 0) {
-				data["rrn"] = PyUnicode_FromString(arcus->auth_data.rrn);
-			}
-			else{
-				data["rrn"] = PyUnicode_FromString(arcus->auth_data.TransactionID);
-			}
-			data["pan_card"] = PyUnicode_FromString(arcus->auth_data.pan);
-			string cardholder_name = trim(string(arcus->auth_data.cardholder_name));
+			payment_error = arcus->purchase((char*)to_fixed(amount, 0).c_str());
+			data["rrn"] = PyUnicode_FromString(arcus->getRRN());
+			data["pan_card"] = PyUnicode_FromString(arcus->getPANCard());
+			string cardholder_name = trim(string(arcus->getCardHolderName()));
 			data["cardholder_name"] = PyUnicode_FromString(cardholder_name.c_str());
 		}
 		else if (doc_type == 3) {
-			if (strlen(rrn) > 0) {
-				arcus->cancelByLink((char*)rrn, (char*)to_fixed(amount, 0).c_str());
-			}
-			else {
-				arcus->universalCancel();
-			}
-			payment_error = atoi(arcus->auth_data.responseCode);
+			payment_error = arcus->cancelByLink((char*)to_fixed(amount, 0).c_str(), (char*)rrn);
 		}
-		if (payment_error > 1) {
-			message = s2ws(cp2utf((char*)arcus->auth_data.text_message));
+		if (payment_error) {
+			message = s2ws(cp2utf((char*)arcus->getMessage()));
 			goto NEXT;
-		}
-		else {
-			payment_error = 0;
 		}
 	}
 	else if (payment_type == 0) {
@@ -950,14 +942,13 @@ NEXT:
 		libCancelDocument();
 	}
 	if (payment_error == 0 && payment_type == 1 && (error_open_doc > 0 || err_code > 0)) {
-		arcus->cancelLast();
-		int pyment_error = atoi(arcus->auth_data.responseCode);
-		if (pyment_error > 1) {
+		payment_error = arcus->cancelLast();
+		if (payment_error) {
 			if (message.size() > 0) {
 				message = message + L", ";
 				payment_error = 0;
 			}
-			message += s2ws(cp2utf((char*)arcus->auth_data.text_message));
+			message += s2ws(cp2utf(arcus->getMessage()));
 			if (error_open_doc == 0) {
 				libCancelDocument();
 			}
@@ -967,30 +958,30 @@ NEXT:
 
 	if (err_code == 0) {
 		MData ans = libCloseDocument(0);
-		if (ans.errCode > 0) {
+		if (ans.errCode) {
 			message = L"Ошибка закрытия документа";
 			err_code = ans.errCode;
 			libCancelDocument();
 			if (payment_error == 0 && payment_type == 2) {
-				payment_error = atoi(arcus->auth_data.responseCode);
+				payment_error = arcus->getResponseCode();
 				if (payment_error > 0) {
 					err_code = payment_error;
-					message = message + L", " + s2ws(cp2utf((char*)arcus->auth_data.text_message));
+					message = message + L", " + s2ws(cp2utf(arcus->getMessage()));
 				}
 			}
 		}
 	}
 
 	addExError(&data);
+	addDateTime(&data);
 	data["message"] = PyUnicode_FromWideChar(message.c_str(), message.size());
 	data["error"] = PyBool_FromLong(err_code);
 	data["error_code"] = PyLong_FromLong(err_code);
 	data["cashier"] = PyUnicode_FromString(cashier);
-
 	if (err_code == 0) {
 		addLastChequeInfo(&data);
 	}
-	free(arcus);
+	delete arcus;
 	return createPyDict(data);
 };
 
@@ -1021,7 +1012,7 @@ static PyMethodDef cashbox_functions[] = {
 int exec_cashbox(PyObject *module) {
     PyModule_AddFunctions(module, cashbox_functions);
     PyModule_AddStringConstant(module, "__author__", "alex-proc");
-    PyModule_AddStringConstant(module, "__version__", "1.0.6");
+    PyModule_AddStringConstant(module, "__version__", "1.0.7");
     PyModule_AddIntConstant(module, "year", 2019);
     return 0; /* success */
 }

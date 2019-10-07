@@ -2,214 +2,152 @@
 #ifndef ARCUS_H
 #define ARCUS_H
 
-#ifdef _MSC_VER
-#pragma pack(pop)
-#endif
-#define IMPORTDLL extern "C" __declspec(dllimport)
-
 #include <iostream>
-#include <fstream>
-#include <sstream>
 #include <string>
+#include <conio.h>
 #include <windows.h>
 
-using namespace std;
+typedef void* (__cdecl* ARCUS_CREATE)();
+typedef void(__cdecl* ARCUS_DELETE)(void*);
+typedef int(__cdecl* ARCUS_SET)(void*, const char*, const char*, int);
+typedef int(__cdecl* ARCUS_GET)(void*, const char*, char*, int);
+typedef int(__cdecl* ARCUS_RUN)(void*, int);
+typedef int(__cdecl* ARCUS_RUN_CMD)(void*, const char*, const char*, int);
+typedef int(__cdecl* ARCUS_CLEAR)(void*);
 
-enum {
-	lnProcCode = 7,
-	lnRFU = 60,
-	lnPan = 20,
-	lnExpiry = 5,
-	lnAmount = 13,
-	lnCurrency = 4,
-	lnTerminalID = 9,
-	lnSpdhTerminalID = 17,
-	lnRetrievalReference = 13,
-	lnAuthIdentResponse = 9,
-	lnResponseCode = 4,
-	lnCardType = 80,
-	lnDate = 7,
-	lnTime = 7,
-	lnBatchNum = 8,
-	lnRFUCredit = 50,
-	lnPinblock = 17,
-	lnPayData = 50,
-	lnPayId = 3,
-	lnMtid = 5,
-	lnReceivedTextMsg = 80,
-	lnAID = 80,
-	lnApplicationLabel = 80,
-	lnTVR = 80,
-	lnCardholderName = 27,
-	lnTraceID = 61,
-	lnDateTime = 13,
-	lnTransactionID = 19,
-	lnCashierName = 102
-};
-
-struct UserAuthIntFull {
-	int handle;
-	int abg_id;
-	int operType;							//[in] Код операции (кассовый)
-	//char payId[lnPayId];
-	char rfu[lnRFU];
-	char pan[lnPan];
-	char expiry[lnExpiry];
-	char pay_acc[lnPan];
-	char additional_payment_data[80];
-	char amount[lnAmount];					//[in] Сумма в копейках
-	char original_amount[lnAmount];			//[in] Оригинальная сумма в копейках
-	char currency[lnCurrency];				//[in] Код валюты
-	char terminalID[lnTerminalID];
-	char rrn[lnRetrievalReference];			//[in][out] Ссылка (только для операций для которых нужно, в остальных случаях - пуста)
-	char authCode[lnAuthIdentResponse];		//[out][in] Код авторизации
-	char responseCode[lnResponseCode];		//[out] Код ответа
-	char cardType[lnCardType];				//[out] Название типа карты
-	char date[lnDate];						//[out] Дата транзакции
-	char time[lnTime];						//[out] Время транзакции
-	char payment_data[lnPayData];					// данные для отправки на хост
-	char data_to_print[lnPayData];					// данные для печати на чеке
-	char home_operator[lnPayData];					// данные для печати на чеке
-	char received_text_message[lnReceivedTextMsg];
-	char text_message[lnReceivedTextMsg];	//[out] Расшифровка
-	char AID[lnAID];
-	char ApplicationLabel[lnApplicationLabel];
-	char TVR[lnTVR];
-	int system_res;
-	unsigned short receiptNumber;			//номер чека
-	unsigned short Invoice;					//номер платежа
-	int operatopn_type;						//тип операции
-	char card_number[20];					//номер карты
-	char merchant[80];						//Идентификатор организации
-	char date_buffer[100];
-	unsigned short debit_number;
-	char debit_total[7];
-	char debit_clear_total[7];
-	unsigned short return_number;
-	char return_total[7];
-	char return_clear_total[7];
-	unsigned long butch_num;				//номер смены / пакета
-	char TrAmount[13];
-	char enc_data[64];
-	char cardholder_name[lnCardholderName];	//имя владельца карт
-	char max_discount[lnAmount];
-	char min_discount[lnAmount];
-	char commission_amount[lnAmount + 1];	//сумма комиссии (в минимальных единицах валюты)
-	char PaymentsData[102]; //в unipay (каждое поле должно быть нултерминировано)
-	//PaymentsData[0:2] – идентификатор платежа;
-	//PaymentsData[3:35] – Поле платежа, значение 1;
-	//PaymentsData[36:68] - Поле платежа, значение 2;
-	//PaymentsData[69:101] - Поле платежа, значение 3;
-	char BIN[7];
-	char Hash[41];
-	char Last4Digits[7];
-	char isDiscoutedGoods;
-	char Balance[lnAmount + 1];
-	char TraceID[lnTraceID];
-	char OriginalDateTime[lnDateTime];
-	unsigned short CashRecieptNumber;
-	char OutPutTransactionData[256];
-	char TransactionID[lnTransactionID];
-	char ComissionOffline[lnAmount];
-	char ComissionOfflineCurrency[lnCurrency];
-	char ComissionAcquirer[lnAmount];
-	char ComissionAcquirerCurrency[lnCurrency];
-	char ComissionIssuer[lnAmount];
-	char ComissionIssuerCurrency[lnCurrency];
-	char AuthorizedAmount[lnAmount];
-	char AuthorizedAmountCurrency[lnCurrency];
-	char HostResponseCode[lnResponseCode];
-	char HostDialectName[32];
-	unsigned char CardTypeLimitation; //признак процессинга, см. CARD_TYPE_*
-	char RequestedDiscount[lnAmount]; //сумма в минимальных единицах валюты, котору пользователь хочет оплатить баллами
-	unsigned char PosEntryMode; //режим ввода карты
-	char NoICCremoving;
-	//char Envelope9F70[LLC_ENVELOPELEN]; //содержимое тега 9F70 карточки (проект LLC)
-	//char EqualDeal[LLC_EQUALDEALLEN]; //содержимое тега EqualDeal (проект LLC)
-	//char HostDesc[LLC_HOSTDESCLEN]; //содержимое тега HostDesc (проект LLC)
-	int EqualDealLen; //длина тега EqualDeal (проект LLC)
-	int HostDescLen; //длина тега HostDesc (проект LLC)
-	//union {
-		//struct TLV_data_t as_tlv;
-		//unsigned char storage[34];
-	//} Tag9F6E;
-	int OriginalOperType; //[in] Код оригинальной операции при отмене вне смены(только для продукта OW / Fuel + )
-		/* add boundary padding here if needed */
-};
-
-typedef int(__cdecl* _PCPOSFUNCFULL)(UserAuthIntFull* auth_st_full, int size);
-
+LPCSTR dll_name("\\Arcus2\\DLL\\arccom.dll");
 class ArcusHandlers {
 
 private:
-	_PCPOSFUNCFULL ProcessOwFull;
-	HMODULE hLib;
+	void* pos_obj = NULL;
+	ARCUS_DELETE ArcusDelete = NULL;
+	ARCUS_CREATE ArcusCreate;
+	ARCUS_SET ArcusSet;
+	ARCUS_GET ArcusGet;
+	ARCUS_RUN ArcusRun;
+	ARCUS_RUN_CMD ArcusRunCmd;
+	ARCUS_CLEAR ArcusClear;
 public:
-	UserAuthIntFull auth_data;
 	ArcusHandlers();
 	~ArcusHandlers();
-	void auth(void);
-	void closeShift(void);
-	void purchase(char*);
-	void cancelLast();
-	void cancelByLink(char*, char*);
-	void universalCancel();
-	void apply();
+	int closeShift(void);
+	int purchase(char* amount, char* currency);
+	int cancelLast();
+	int cancelByLink(char*, char*);
+	int universalCancel();
+	void clean();
+	char* getStr(char* name);
+	char* getRRN();
+	char* getMessage();
+	char* getPANCard();
+	char* getCardHolderName();
+	int getResponseCode();
 	string getCheque(void);
 };
 
 ArcusHandlers::ArcusHandlers() {
-	LPCSTR lib_path("C:\\Arcus2\\DLL\\ArcCom.dll");
-	this->hLib = LoadLibraryA(lib_path);
-	this->ProcessOwFull = (_PCPOSFUNCFULL)GetProcAddress(this->hLib, "ProcessOwFull");
+	HINSTANCE dll = LoadLibraryA(dll_name);
+	if (dll == NULL) {
+		/// exit if DLL file not loaded
+		throw std::runtime_error("DLL not Load");
+	}
+	ArcusDelete = (ARCUS_DELETE)GetProcAddress(dll, "DeleteITPos");
+	ArcusCreate = (ARCUS_CREATE)GetProcAddress(dll, "CreateITPos");
+	ArcusSet = (ARCUS_SET)GetProcAddress(dll, "ITPosSet");
+	ArcusGet = (ARCUS_GET)GetProcAddress(dll, "ITPosGet");
+	ArcusRun = (ARCUS_RUN)GetProcAddress(dll, "ITPosRun");
+	ArcusRunCmd = (ARCUS_RUN_CMD)GetProcAddress(dll, "ITPosRunCmd");
+	ArcusClear = (ARCUS_CLEAR)GetProcAddress(dll, "ITPosClear");
+	/// check DLL functions
+	if (ArcusCreate == NULL) throw std::runtime_error("function ArcusCreate not loaded");
+	if (ArcusDelete == NULL) throw std::runtime_error("function ArcusDelete not loaded");
+	if (ArcusSet == NULL) throw std::runtime_error("function ArcusSet not loaded");
+	if (ArcusGet == NULL) throw std::runtime_error("function ArcusGet not loaded");
+	if (ArcusRun == NULL) throw std::runtime_error("function ArcusRun not loaded");
+	if (ArcusRunCmd == NULL) throw std::runtime_error("function ArcusRunCmd not loaded");
+	if (ArcusClear == NULL) throw std::runtime_error("function ArcusClear not loaded");
+	pos_obj = ArcusCreate();
+	if (pos_obj == NULL) {
+		/// exit if object not created
+		throw std::runtime_error("create object fail");
+	}
 }
 
 ArcusHandlers::~ArcusHandlers() {
-	FreeLibrary(this->hLib);
+	if ((ArcusDelete != NULL) && (pos_obj != NULL)) {
+		ArcusDelete(pos_obj);
+	}
 }
 
-void ArcusHandlers::apply() {
-	ProcessOwFull(&this->auth_data, sizeof(UserAuthIntFull));
+int ArcusHandlers::closeShift() {
+	return ArcusRun(pos_obj, 11);
 }
 
-void ArcusHandlers::auth() {
-	UserAuthIntFull auth_data;
-	memset(&auth_data, 0, sizeof(UserAuthIntFull));
-	this->auth_data = auth_data;
+void ArcusHandlers::clean() {
+	ArcusClear(pos_obj);
 }
 
-void ArcusHandlers::closeShift() {
-	this->auth_data.operType = 11;
-	this->apply();
+char* ArcusHandlers::getStr(char* name) {
+	int size = ArcusGet(pos_obj, name, NULL, -1);
+	if (size <= 0) {
+		return "";
+	}
+	char* value = new char[size + 1];
+	if (ArcusGet(pos_obj, name, value, size + 1) < 0) {
+		return "";
+	}
+	return value;
 }
 
-void ArcusHandlers::purchase(char* amount) {
-	this->auth_data.operType = 1;
-	strncpy_s(this->auth_data.amount, lnAmount, amount, lnAmount);
-	this->apply();
+char* ArcusHandlers::getRRN() {
+	return getStr("rrn");
 }
 
-void ArcusHandlers::cancelLast() {
+char* ArcusHandlers::getMessage() {
+	return getStr("received_text_message");
+}
+
+char* ArcusHandlers::getPANCard() {
+	return getStr("pan");
+}
+
+char* ArcusHandlers::getCardHolderName() {
+	return getStr("cardholder_name");
+}
+
+int ArcusHandlers::getResponseCode() {
+	char* code = getStr("response_code");
+	if (strlen(code)) {
+		return atoi(code);
+	}
+	return 0;
+}
+
+int ArcusHandlers::purchase(char* amount, char* currency = "643") {
+	if (ArcusSet(pos_obj, "amount", amount, -1) != 0) return 1;
+	if (ArcusSet(pos_obj, "currency", currency, -1) != 0) return 1;
+	return ArcusRun(pos_obj, 1);
+}
+
+int ArcusHandlers::cancelLast() {
 	// Отмена последней транзакции
-	this->auth_data.operType = 2;
-	this->apply();
+	return ArcusRun(pos_obj, 2);
 }
 
-void ArcusHandlers::universalCancel() {
-	this->auth_data.operType = 4;
-	this->apply();
+int ArcusHandlers::universalCancel() {
+	return ArcusRun(pos_obj, 4);
 }
 
-void ArcusHandlers::cancelByLink(char* rrn, char* amount) {
-	this->auth_data.operType = 3;
-	strncpy_s(this->auth_data.rrn, lnRetrievalReference, rrn, lnRetrievalReference);
-	strncpy_s(this->auth_data.TransactionID, lnTransactionID, rrn, lnTransactionID);
-	strncpy_s(this->auth_data.amount, lnAmount, amount, lnAmount);
-	this->apply();
+int ArcusHandlers::cancelByLink(char* amount, char* rrn = NULL) {
+	if (rrn != NULL && strlen(rrn) > 3) {
+		ArcusSet(pos_obj, "rrn", rrn, -1);
+	}
+	if (ArcusSet(pos_obj, "amount", amount, -1) != 0) return 1;
+	return ArcusRun(pos_obj, 3);
 }
 
 string ArcusHandlers::getCheque() {
-	ifstream cheque(L"C:\\Arcus2\\cheq.out");
+	ifstream cheque(L"\\Arcus2\\cheq.out");
 	ostringstream data;
 	string line;
 	if (cheque.is_open()) {
