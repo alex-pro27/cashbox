@@ -141,4 +141,7 @@ transaction_sum float - Сумма транзакции
 delivery float - Сдача,
 amount float - Количество вносимых / изъятых денег
 datetime string - текущая дата и время фискального регистратора
+status_printer_message str - описание статуса принтера
+status_printer_error_code int - код ошибки принтера
+is_open_shift bool - статус смены открыта/закрыта
 ```

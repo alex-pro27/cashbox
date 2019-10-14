@@ -58,12 +58,13 @@ std::tuple<int, wstring> getExError(int err_code) {
 	return std::make_tuple(err_code, s2ws(cp2utf(mess).c_str()));
 }
 
-std::tuple<bool, wstring> checkStatusPrinter() {
+std::tuple<int, bool, wstring> checkStatusPrinter() {
 	int fatal;
 	int current;
 	int doc;
 	wstring mess = L"";
 	int err = 0;
+	int is_open_shift = false;
 	getStatusFlags(&fatal, &current, &doc);
 	if (fatal && (err = get_bit_flag(fatal, 8)) > -1) {
 		err += 1;
@@ -91,6 +92,7 @@ std::tuple<bool, wstring> checkStatusPrinter() {
 			break;
 		case 3:
 			err = 0;
+			is_open_shift = true;
 			break;
 		case 4:
 			mess = L"Смена больше 24 часов";
@@ -109,12 +111,11 @@ std::tuple<bool, wstring> checkStatusPrinter() {
 			break;
 		case 9:
 			mess = L"Не было завершено закрытие смены, необходимо повторить операцию";
-
 		}
 	}
 	// unsigned char ld = doc & 15;
 	// unsigned char hd = doc >> 4;
-	return std::make_tuple(err, mess);
+	return std::make_tuple(err, is_open_shift, mess);
 }
 
 /* Получить сумму скидок/наценок */
@@ -350,15 +351,25 @@ PyObject* cashbox_open_port(PyObject* self, PyObject* args, PyObject* kwargs) {
 	}
 	int err_code = openPort(port, speed);
 	wstring st = L"Успешно";
-	if (err_code > 0)
+	map<string, PyObject*> data = {};
+	if (err_code) {
 		st = L"Нет связи с ККТ";
+
+	}
+	else {
+		std::tuple<int, bool, wstring> res = checkStatusPrinter();
+		wstring mess = std::get<2>(res);
+		data["status_printer_message"] = PyUnicode_FromWideChar(mess.c_str(), mess.size());;
+		data["status_printer_error_code"] = PyLong_FromLongLong(std::get<0>(res));
+		data["is_open_shift"] = PyBool_FromLong(std::get<1>(res));
+		addShiftNumber(&data, !std::get<1>(res));
+		addKKTINFO(&data);
+	}
 	
-	auto message = PyUnicode_FromWideChar(st.c_str(), st.size());
-	auto error = PyBool_FromLong(err_code);
-	PyObject* rslt = PyTuple_New(2);
-	PyTuple_SetItem(rslt, 0, error);
-	PyTuple_SetItem(rslt, 1, message);
-	return rslt;
+	data["message"] = PyUnicode_FromWideChar(st.c_str(), st.size());
+	data["error"] = PyBool_FromLong(err_code);
+	
+	return createPyDict(data);
 }
 
 PyDoc_STRVAR(cashbox_close_port_doc, "close_port()\
@@ -378,11 +389,14 @@ PyObject* cashbox_open_shift(PyObject* self, PyObject* args, PyObject* kwargs) {
 	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "s", keywords, &cashier)) {
 		return NULL;
 	}
-	std::tuple<int, wstring> res = checkStatusPrinter();
+	std::tuple<int, bool, wstring> res = checkStatusPrinter();
 	wstring st = L"Успешно";
 	int err_code = std::get<0>(res);
 	if (err_code) {
-		st = std::get<1>(res);
+		st = std::get<2>(res);
+	}
+	else if (std::get<1>(res)) {
+		st = L"Смена уже открыта";
 	}
 	else {
 		err_code = libOpenShift((char*)utf2oem((char*)cashier).c_str());
@@ -422,14 +436,14 @@ PyObject* cashbox_close_shift_pin_pad(PyObject* self, PyObject* args, PyObject* 
 	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "s", keywords, &cashier)) {
 		return NULL;
 	}
-	std::tuple<int, wstring> res = checkStatusPrinter();
+	std::tuple<int, bool, wstring> res = checkStatusPrinter();
 	wstring st = L"Успешно";
 	map<string, PyObject*> data = {
 		{"cashier", PyUnicode_FromString(cashier)},
 	};
 	int err_code = std::get<0>(res);
 	if (err_code) {
-		st = std::get<1>(res);
+		st = std::get<2>(res);
 	}
 	else {
 		err_code = libOpenDocument(4, 1, (char*)utf2oem((char*)cashier).c_str(), 0);
@@ -485,17 +499,21 @@ PyObject* cashbox_close_shift(PyObject* self, PyObject* args, PyObject* kwargs) 
 	map<string, PyObject*> data = {
 		{"cashier", PyUnicode_FromString(cashier)},
 	};
-	std::tuple<int, wstring> res = checkStatusPrinter();
+	std::tuple<int, bool, wstring> res = checkStatusPrinter();
 	wstring st = L"Успешно";
 	int err_code = std::get<0>(res);
 	if (err_code) {
-		st = std::get<1>(res);
+		st = std::get<2>(res);
+	}
+	else if (!std::get<1>(res)) {
+		st = L"Смена уже закрыта";
+		err_code = 98;
 	}
 	else {
 		err_code = libPrintZReport((char*)utf2oem((char*)cashier).c_str(), 1);
 		addShiftNumber(&data, true);
 		addZReport(&data);
-		if (err_code > 0) {
+		if (err_code) {
 			st = L"Ошибка закрытия смены";
 		}
 	}
@@ -515,11 +533,11 @@ Force close a cashier shift\
 :return dict()");
 PyObject* cashbox_force_close_shift(PyObject* self) {
 	map<string, PyObject*> data = {};
-	std::tuple<int, wstring> res = checkStatusPrinter();
+	std::tuple<int, bool, wstring> res = checkStatusPrinter();
 	wstring st = L"Успешно";
 	int err_code = std::get<0>(res);
 	if (err_code) {
-		st = std::get<1>(res);
+		st = std::get<2>(res);
 	}
 	else {
 		err_code = libEmergencyCloseShift();
@@ -581,11 +599,15 @@ PyObject* cashbox_set_zero_cash_drawer(PyObject* self, PyObject* args, PyObject*
 	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "s", keywords, &cashier)) {
 		return NULL;
 	}
-	std::tuple<int, wstring> res = checkStatusPrinter();
+	std::tuple<int, bool, wstring> res = checkStatusPrinter();
 	wstring st = L"Успешно";
 	err_code = std::get<0>(res);
 	if (err_code) {
-		st = std::get<1>(res);
+		st = std::get<2>(res);
+	}
+	else if (!std::get<1>(res)) {
+		st = L"Сначала откройте смену";
+		err_code = 99;
 	}
 	else {
 		string _cash_balance = requestDecorator(7, libGetKKTInfo);
@@ -652,11 +674,15 @@ PyObject* cashbox_handler_cash_drawer(PyObject* self, PyObject* args, PyObject* 
 		PyErr_SetString(PyExc_ValueError, ws2s(L"Неверный тип документа (4 - внесение, 5 - изъятие)").c_str());
 		return NULL;
 	}
-	std::tuple<int, wstring> res = checkStatusPrinter();
+	std::tuple<int, bool, wstring> res = checkStatusPrinter();
 	err_code = std::get<0>(res);
 	if (err_code) {
-		st = std::get<1>(res);
+		st = std::get<2>(res);
 	} 
+	else if (!std::get<1>(res)) {
+		st = L"Сначала откройте смену";
+		err_code = 99;
+	}
 	else {
 		err_code = libOpenDocument(doc_type, 1, (char*)utf2oem(cashier).c_str(), 0);
 		if (err_code) {
@@ -716,8 +742,13 @@ Get kkt info \
 :return dict()");
 PyObject* cashbox_kkt_info(PyObject* self) {
 	map<string, PyObject*> data = {};
-	addShiftNumber(&data);
 	addKKTINFO(&data);
+	std::tuple<int, bool, wstring> res = checkStatusPrinter();
+	wstring mess = std::get<2>(res);
+	data["status_printer_message"] = PyUnicode_FromWideChar(mess.c_str(), mess.size());;
+	data["status_printer_error_code"] = PyLong_FromLongLong(std::get<0>(res));
+	data["is_open_shift"] = PyBool_FromLong(std::get<1>(res));
+	addShiftNumber(&data, !std::get<1>(res));
 	return createPyDict(data);
 };
 
@@ -781,11 +812,19 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 	bool is_open_doc = false;
 	map<string, PyObject*> data = {};
 
-	std::tuple<int, wstring> res = checkStatusPrinter();
+	std::tuple<int, bool, wstring> res = checkStatusPrinter();
 	err_code = std::get<0>(res);
 	if (std::get<0>(res)) {
-		message = std::get<1>(res);
+		message = std::get<2>(res);
 		data["message"] = PyUnicode_FromWideChar(message.c_str(), message.size());
+		data["error"] = PyBool_FromLong(err_code);
+		data["error_code"] = PyLong_FromLong(err_code);
+		return createPyDict(data);
+	}
+	else if (!std::get<1>(res)) {
+		message = L"Сначала откройте смену";
+		data["message"] = PyUnicode_FromWideChar(message.c_str(), message.size());
+		err_code = 99;
 		data["error"] = PyBool_FromLong(err_code);
 		data["error_code"] = PyLong_FromLong(err_code);
 		return createPyDict(data);
@@ -845,12 +884,12 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 				return NULL;
 			}
 			data["amount"] = PyFloat_FromDouble(amount);
+			data["delivery"] = PyFloat_FromDouble(stod(to_fixed(amount - (_sum - _discount_sum), 2)));
 			amount = round(amount * 100);
 		}
 		else {
 			amount = sum - discount_sum;
 		}
-		data["delivery"] = PyFloat_FromDouble((long int)ceill(amount - _sum - discount_sum / 100));
 		libOpenCashDrawer(0); // Открыть денежный ящик
 	}
 
@@ -1032,7 +1071,7 @@ static PyMethodDef cashbox_functions[] = {
 int exec_cashbox(PyObject *module) {
     PyModule_AddFunctions(module, cashbox_functions);
     PyModule_AddStringConstant(module, "__author__", "alex-proc");
-    PyModule_AddStringConstant(module, "__version__", "1.0.8");
+    PyModule_AddStringConstant(module, "__version__", "1.0.9");
     PyModule_AddIntConstant(module, "year", 2019);
     return 0; /* success */
 }
