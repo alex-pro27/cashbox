@@ -96,6 +96,7 @@ std::tuple<int, bool, wstring> checkStatusPrinter() {
 			break;
 		case 4:
 			mess = L"Смена больше 24 часов";
+			is_open_shift = true;
 			break;
 		case 5:
 			mess = L"Архив ККТ закрыт";
