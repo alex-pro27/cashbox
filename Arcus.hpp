@@ -6,6 +6,10 @@
 #include <string>
 #include <conio.h>
 #include <windows.h>
+#include <regex>
+#include <map>
+
+using namespace std;
 
 typedef void* (__cdecl* ARCUS_CREATE)();
 typedef void(__cdecl* ARCUS_DELETE)(void*);
@@ -27,9 +31,11 @@ private:
 	ARCUS_RUN ArcusRun;
 	ARCUS_RUN_CMD ArcusRunCmd;
 	ARCUS_CLEAR ArcusClear;
+	string cheque;
 public:
 	ArcusHandlers();
 	~ArcusHandlers();
+	void* getPosObj();
 	int closeShift(void);
 	int purchase(char* amount, char* currency);
 	int cancelLast();
@@ -42,14 +48,14 @@ public:
 	char* getPANCard();
 	char* getCardHolderName();
 	int getResponseCode();
-	string getCheque(void);
+	string getCheque(bool new_read);
 };
 
 ArcusHandlers::ArcusHandlers() {
 	HINSTANCE dll = LoadLibraryA(dll_name);
 	if (dll == NULL) {
 		/// exit if DLL file not loaded
-		throw std::runtime_error("DLL not Load");
+		throw std::runtime_error("Arcus DLL not Load");
 	}
 	ArcusDelete = (ARCUS_DELETE)GetProcAddress(dll, "DeleteITPos");
 	ArcusCreate = (ARCUS_CREATE)GetProcAddress(dll, "CreateITPos");
@@ -71,6 +77,10 @@ ArcusHandlers::ArcusHandlers() {
 		/// exit if object not created
 		throw std::runtime_error("create object fail");
 	}
+}
+
+void* ArcusHandlers::getPosObj() {
+	return this->pos_obj;
 }
 
 ArcusHandlers::~ArcusHandlers() {
@@ -100,25 +110,48 @@ char* ArcusHandlers::getStr(char* name) {
 }
 
 char* ArcusHandlers::getRRN() {
-	return getStr("rrn");
+	auto value = std::regex_replace(string(this->getStr("transaction_id")), std::regex("[^0-9]"), "");
+	if (!value.size()) {
+		string cheque = getCheque(false);
+		smatch matches;
+		if (std::regex_search(cheque, matches, std::regex("(?:RRN:([0-9]+))"))) {
+			if (matches.size() == 2) {
+				value = matches[1];
+			}
+		}
+	}
+	return (char*)value.c_str();
 }
 
 char* ArcusHandlers::getMessage() {
-	return getStr("received_text_message");
+	auto value = std::regex_replace(string(this->getStr("text_message")), std::regex("[^0-9аА-яЯёЁaA-zZ\\s]"), "");
+	return (char*)value.c_str();
 }
 
 char* ArcusHandlers::getPANCard() {
-	return getStr("pan");
+	auto value = std::regex_replace(string(this->getStr("pan")), std::regex("[^0-9\\*]"), "");
+	if (!value.size()) {
+		string cheque = getCheque(false);
+		smatch matches;
+		if (std::regex_search(cheque, matches, std::regex("(?:PAN:([*0-9]+))"))) {
+			if (matches.size() == 2) {
+				value = matches[1];
+			}
+		}
+	}
+	return (char*)value.c_str();
 }
 
 char* ArcusHandlers::getCardHolderName() {
-	return getStr("cardholder_name");
+	auto value = std::regex_replace(string(this->getStr("cardholder_name")), std::regex("[^0-9аА-яЯёЁaA-zZ\\s]"), "");
+	return (char*)value.c_str();
 }
 
 int ArcusHandlers::getResponseCode() {
 	char* code = getStr("response_code");
 	if (strlen(code)) {
-		return atoi(code);
+		auto value = std::regex_replace(string(code), std::regex("[^0-9]"), "");
+		return stoi(value);
 	}
 	return 0;
 }
@@ -140,23 +173,26 @@ int ArcusHandlers::universalCancel() {
 
 int ArcusHandlers::cancelByLink(char* amount, char* rrn = NULL) {
 	if (rrn != NULL && strlen(rrn) > 3) {
-		ArcusSet(pos_obj, "rrn", rrn, -1);
+		ArcusSet(pos_obj, "transaction_id", rrn, -1);
 	}
 	if (ArcusSet(pos_obj, "amount", amount, -1) != 0) return 1;
 	return ArcusRun(pos_obj, 3);
 }
 
-string ArcusHandlers::getCheque() {
-	ifstream cheque(L"\\Arcus2\\cheq.out");
-	ostringstream data;
-	string line;
-	if (cheque.is_open()) {
-		while (getline(cheque, line)) {
-			data << line;
+string ArcusHandlers::getCheque(bool new_read = false) {
+	if (new_read || !this->cheque.size()) {
+		ifstream cheque(L"\\Arcus2\\cheq.out");
+		ostringstream data;
+		string line;
+		if (cheque.is_open()) {
+			while (getline(cheque, line)) {
+				data << line;
+			}
+			cheque.close();
 		}
-		cheque.close();
+		this->cheque = data.str();
 	}
-	return data.str();
+	return this->cheque;
 }
 
 #endif

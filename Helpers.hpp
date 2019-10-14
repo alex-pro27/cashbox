@@ -115,6 +115,15 @@ namespace Helpers {
 		return ~(~0 << n) << pos;
 	};
 
+	int get_bit_flag(int code, int len) {
+		for (int i = 0; i < len; i++) {
+			if ((code >> i) & 1) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
 	template <typename T, int N>
 	bool in_array(T arr[N], T needle) {
 		for (int i = 0; i < N; i++) {

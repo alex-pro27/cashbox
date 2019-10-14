@@ -52,75 +52,69 @@ void setParsedData(map<char*, int> keys, string kktinfo, map<string, PyObject*> 
 	}
 }
 
-std::tuple<int, wstring> getExError() {
-	MData inf = libGetExErrorInfo(1);
-	auto r = split(inf.data, "\x1c");
-	if (r.size() < 2) {
-		return std::make_tuple(0, L"");
-	}
-	int err_code = stoi(r[1]);
-	wstring message;
-	switch (err_code) {
-	case 1:
-		message = L"Не была вызвана функция “Начало работы”";
-		break;
-	case 2:
-		message = L"Не фискальный режим";
-		break;
-	case 3:
-		message = L"Архив ФН закрыт";
-		break;
-	case 4:
-		message = L"ФН не зарегистрирован";
-		break;
-	case 5:
-		message = L"ФН уже зарегистрирован";
-		break;
-	case 8:
-		message = L"Документ не был открыт";
-		break;
-	case 9:
-		message = L"Предыдущий документ не закрыт";
-		break;
-	case 15:
-		message = L"Документ закрыт в ФН";
-		break;
-	case 16:
-		message = L"Документ не является продажей (приходом) или возвратом (возвратом прихода)";
-		break;
-	case 17:
-		message = L"Документ не является внесением или изъятием";
-		break;
-	case 20:
-		message = L"Смена не открыта";
-		break;
-	case 21:
-		message = L"Фатальная ошибка ФН";
-		break;
-	case 22:
-		message = L"ФН не в режиме получения документа для ОФД";
-		break;
-	default:
-		err_code = 0;
-	}
-	return std::make_tuple(err_code, message);
+std::tuple<int, wstring> getExError(int err_code) {
+	char* mess = new char[1024];
+	libFormatMessage(err_code, mess, 1024);
+	return std::make_tuple(err_code, s2ws(cp2utf(mess).c_str()));
 }
 
-std::tuple<int, wstring> checkStatusPrinter() {
-	std::tuple<int, wstring> err = getExError();
-	int err_code = std::get<0>(err);
-	wstring message = std::get<1>(err);
-	int fnd_stack[9]{ 2,3,4,5,8,15,20,21,22 };
-	if (err_code == 1) {
-		commandStart();
+std::tuple<bool, wstring> checkStatusPrinter() {
+	int fatal;
+	int current;
+	int doc;
+	wstring mess = L"";
+	int err = 0;
+	getStatusFlags(&fatal, &current, &doc);
+	if (fatal && (err = get_bit_flag(fatal, 8)) > -1) {
+		err += 1;
+		switch (err) {
+		case 1:
+			mess = L"Неверная контрольная сумма NVR";
+			break;
+		case 5:
+			mess = L"ККТ не авторизовано";
+			break;
+		case 6:
+			mess = L"Фатальная ошибка ФН";
+			break;
+		}
 	}
-	else if (err_code == 9) {
-		//libCancelDocument();
+	else if (current && (err = get_bit_flag(current, 9)) > -1) {
+		err += 1;
+		switch (err) {
+		case 1:
+			err = 0;
+			commandStart();
+			break;
+		case 2:
+			mess = L"Не фискальный режим";
+			break;
+		case 3:
+			err = 0;
+			break;
+		case 4:
+			mess = L"Смена больше 24 часов";
+			break;
+		case 5:
+			mess = L"Архив ККТ закрыт";
+			break;
+		case 6:
+			mess = L"ККТ не активирована";
+			break;
+		case 7:
+			mess = L"Нет памяти для закрытия смены в ФП";
+			break;
+		case 8:
+			mess = L"Был введен неверный пароль доступа к ФП";
+			break;
+		case 9:
+			mess = L"Не было завершено закрытие смены, необходимо повторить операцию";
+
+		}
 	}
-	else if (in_array<int, 9>(fnd_stack, err_code)) {
-		return err;
-	}
-	return std::make_tuple(0, L"");
+	// unsigned char ld = doc & 15;
+	// unsigned char hd = doc >> 4;
+	return std::make_tuple(err, mess);
 }
 
 /* Получить сумму скидок/наценок */
@@ -178,12 +172,14 @@ int getNextChequeNumber() {
 	if (cheque_number != "") {
 		auto cn = split(cheque_number, ".");
 		if (cn.size() > 1) {
-			int number = stoi(cn[1]);
-			return number + 1;
+			string shift_number = requestDecorator(1, libGetCountersAndRegisters);
+			if (shift_number == cn[0]) {
+				int number = stoi(cn[1]);
+				return number + 1;
+			}
 		}
-		return 1;
 	}
-	return 0;
+	return 1;
 }
 
 /* Информация о последнем чеке */
@@ -215,9 +211,9 @@ void addProgressiveTotalSales(map<string, PyObject*> *data) {
 };
 
 /* Расширенная информация об ошибке */
-void addExError(map<string, PyObject*>* data) {
-	auto ex_err = getExError();
-	if (std::get<0>(ex_err)) {
+void addExError(map<string, PyObject*>* data, int err_code) {
+	if (err_code) {
+		auto ex_err = getExError(err_code);
 		(*data)["description_error"] = PyUnicode_FromWideChar(std::get<1>(ex_err).c_str(), std::get<1>(ex_err).size());
 	}
 }
@@ -344,7 +340,6 @@ PyObject* cashbox_set_datetime(PyObject* self, PyObject* args, PyObject* kwargs)
 }
 
 PyDoc_STRVAR(cashbox_open_port_doc, "open_port(port, speed)\
-\
 Open COM Port for Pirit");
 PyObject* cashbox_open_port(PyObject* self, PyObject* args, PyObject* kwargs) {
 	const char* port;
@@ -367,7 +362,6 @@ PyObject* cashbox_open_port(PyObject* self, PyObject* args, PyObject* kwargs) {
 }
 
 PyDoc_STRVAR(cashbox_close_port_doc, "close_port()\
-\
 Close COM Port for Pirit");
 PyObject* cashbox_close_port(PyObject* self) {
 	closePort();
@@ -375,7 +369,6 @@ PyObject* cashbox_close_port(PyObject* self) {
 }
 
 PyDoc_STRVAR(cashbox_open_shift_doc, "open_shift(cashier)\
-\
 Opening a cashier shift\
 :param str cashier: - Cashier name\
 :return dict()");
@@ -408,7 +401,7 @@ PyObject* cashbox_open_shift(PyObject* self, PyObject* args, PyObject* kwargs) {
 		{"cashier", PyUnicode_FromString(cashier)},
 	};
 
-	addExError(&data);
+	addExError(&data, err_code);
 	
 	if (err_code == 0) {
 		addKKTINFO(&data);
@@ -420,7 +413,6 @@ PyObject* cashbox_open_shift(PyObject* self, PyObject* args, PyObject* kwargs) {
 };
 
 PyDoc_STRVAR(cashbox_close_shift_pin_pad_doc, "close_shift_pin_pad(cashier)\
-\
 Close a cashier shift for pin-pad\
 :param str cashier: - Cashier name\
 :return dict()");
@@ -441,22 +433,30 @@ PyObject* cashbox_close_shift_pin_pad(PyObject* self, PyObject* args, PyObject* 
 	}
 	else {
 		err_code = libOpenDocument(4, 1, (char*)utf2oem((char*)cashier).c_str(), 0);
-		wstring st;
 		if (!err_code) {
-			ArcusHandlers* arcus = new ArcusHandlers();
-			err_code = arcus->closeShift();
-			st = s2ws(cp2utf(arcus->getMessage()).c_str());
-			data["message"] = PyUnicode_FromWideChar(st.c_str(), st.size());
-			if (err_code < 10) {
-				err_code = 0;
-				printCheque();
-				libCutDocument();
-				libCancelDocument();
-				libCutDocument();
+			try {
+				ArcusHandlers* arcus = new ArcusHandlers();
+				err_code = arcus->closeShift();
+				st = s2ws(cp2utf(arcus->getMessage()).c_str());
+				data["message"] = PyUnicode_FromWideChar(st.c_str(), st.size());
+				if (!err_code) {
+					printCheque();
+					libCutDocument();
+					libCancelDocument();
+					libCutDocument();
+				}
+				else {
+					libCancelDocument();
+					libCutDocument();
+				}
+				delete arcus;
+			} 
+			catch (const std::runtime_error& e) {
+				PyErr_SetString(PyExc_RuntimeError, e.what());
+				return NULL;
 			}
-			delete arcus;
 		}
-		if (err_code > 0) {
+		else {
 			st = L"Ошибка закрытия пакета";
 		}
 	}
@@ -467,7 +467,7 @@ PyObject* cashbox_close_shift_pin_pad(PyObject* self, PyObject* args, PyObject* 
 	data["error"] = error;
 	data["message"] = message;
 	data["error_code"] = PyLong_FromLong(err_code);
-	addExError(&data);
+	addExError(&data, err_code);
 	return createPyDict(data);
 }
 
@@ -506,7 +506,7 @@ PyObject* cashbox_close_shift(PyObject* self, PyObject* args, PyObject* kwargs) 
 	data["error"] = error;
 	data["message"] = message;
 	data["error_code"] = PyLong_FromLong(err_code);
-	addExError(&data);
+	addExError(&data, err_code);
 	return createPyDict(data);
 };
 
@@ -532,7 +532,7 @@ PyObject* cashbox_force_close_shift(PyObject* self) {
 	data["message"] = PyUnicode_FromWideChar(st.c_str(), st.size());;
 	data["error"] = PyBool_FromLong(err_code);
 	data["error_code"] = PyLong_FromLong(err_code);
-	addExError(&data);
+	addExError(&data, err_code);
 	return createPyDict(data);
 };
 
@@ -548,18 +548,26 @@ PyObject* cashbox_cancel_payment_by_link(PyObject* self, PyObject* args, PyObjec
 	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "i|s", keywords, &amount, &rrn)) {
 		return NULL;
 	}
-	ArcusHandlers* arcus = new ArcusHandlers();
-	int err_code = arcus->cancelByLink((char*)to_string(amount).c_str(), rrn);
-	wstring message = s2ws(cp2utf((char*)arcus->getMessage()));
-	if (err_code < 10) {
-		err_code = 0;
+
+	int err_code = 0;
+	wstring message;
+
+	try {
+		ArcusHandlers* arcus = new ArcusHandlers();
+		err_code = arcus->cancelByLink((char*)to_string(amount).c_str(), rrn);
+		message = s2ws(cp2utf((char*)arcus->getMessage()));
+		delete arcus;
 	}
+	catch (const std::runtime_error& e) {
+		PyErr_SetString(PyExc_RuntimeError, e.what());
+		return NULL;
+	}
+	
 	map<string, PyObject*> data = {
 		{"message", PyUnicode_FromWideChar(message.c_str(), message.size())},
 		{"error",  PyBool_FromLong(err_code)},
 		{"error_code", PyLong_FromLong(err_code)},
 	};
-	delete arcus;
 	return createPyDict(data);
 };
 
@@ -623,7 +631,7 @@ SEND_DATA:
 		{"error",  PyBool_FromLong(err_code)},
 		{"error_code", PyLong_FromLong(err_code)},
 	};
-	addExError(&data);
+	addExError(&data, err_code);
 	return createPyDict(data);
 };
 
@@ -651,19 +659,19 @@ PyObject* cashbox_handler_cash_drawer(PyObject* self, PyObject* args, PyObject* 
 	} 
 	else {
 		err_code = libOpenDocument(doc_type, 1, (char*)utf2oem(cashier).c_str(), 0);
-		if (err_code > 0) {
+		if (err_code) {
 			st = L"Не удалось открыть документ";
 			libCancelDocument();
 		}
 		else {
 			err_code = libCashInOut("", amount);
-			if (err_code > 0) {
+			if (err_code) {
 				st = L"Ошибка внесения/изъятия";
 				libCancelDocument();
 			}
 			else {
 				MData ans = libCloseDocument(0);
-				if (ans.errCode > 0) {
+				if (ans.errCode) {
 					libCancelDocument();
 					err_code = ans.errCode;
 					st = L"Не удалось закрыть документ";
@@ -680,7 +688,7 @@ PyObject* cashbox_handler_cash_drawer(PyObject* self, PyObject* args, PyObject* 
 		{"error_code", PyLong_FromLong(err_code)},
 	};
 	addKKTINFO(&data);
-	addExError(&data);
+	addExError(&data, err_code);
 	return createPyDict(data);
 };
 
@@ -745,7 +753,7 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 	if (!parse_ok) {
 		PyErr_SetString(
 			PyExc_ValueError,
-			"Invalid args. allowed formats: 'cashier: str', 'payment_type: int', 'doc_type: int', 'wares: list', 'amount: float', 'rrn: str'"
+			"Invalid args. allowed formats: 'cashier: str', 'payment_type: int', 'doc_type: int', 'wares: list', 'amount: float', 'rrn: str', 'order_prefix: str', 'print_strings: str'"
 		);
 		return NULL;
 	}
@@ -806,17 +814,24 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 	if (payment_type == 1) {
 		// Безнал
 		amount = sum - discount_sum;
-		arcus = new ArcusHandlers();
+		try {
+			arcus = new ArcusHandlers();
+		}
+		catch (const std::runtime_error& e) {
+			PyErr_SetString(PyExc_RuntimeError, e.what());
+			return NULL;
+		}
 		if (doc_type == 2) {
 			payment_error = arcus->purchase((char*)to_fixed(amount, 0).c_str());
-			data["rrn"] = PyUnicode_FromString(arcus->getRRN());
-			data["pan_card"] = PyUnicode_FromString(arcus->getPANCard());
-			string cardholder_name = trim(string(arcus->getCardHolderName()));
-			data["cardholder_name"] = PyUnicode_FromString(cardholder_name.c_str());
 		}
-		else if (doc_type == 3) {
+		else {
 			payment_error = arcus->cancelByLink((char*)to_fixed(amount, 0).c_str(), (char*)rrn);
 		}
+		data["rrn"] = PyUnicode_FromString(cp2utf(arcus->getRRN()).c_str());
+		data["pan_card"] = PyUnicode_FromString(cp2utf(arcus->getPANCard()).c_str());
+		string cardholder_name = trim(string(arcus->getCardHolderName()));
+		data["cardholder_name"] = PyUnicode_FromString(cp2utf((char*)cardholder_name.c_str()).c_str());
+		
 		if (payment_error) {
 			message = s2ws(cp2utf((char*)arcus->getMessage()));
 			goto NEXT;
@@ -954,9 +969,8 @@ NEXT:
 			}
 		}
 	}
-	err_code = err_code + error_open_doc + payment_error;
 
-	if (err_code == 0) {
+	if (is_open_doc && !(err_code && error_open_doc && payment_error)) {
 		MData ans = libCloseDocument(0);
 		if (ans.errCode) {
 			message = L"Ошибка закрытия документа";
@@ -965,22 +979,28 @@ NEXT:
 			if (payment_error == 0 && payment_type == 2) {
 				payment_error = arcus->getResponseCode();
 				if (payment_error > 0) {
-					err_code = payment_error;
 					message = message + L", " + s2ws(cp2utf(arcus->getMessage()));
 				}
 			}
 		}
 	}
-
-	addExError(&data);
+	addExError(&data, err_code);
 	addDateTime(&data);
+	if (err_code || payment_error || error_open_doc) {
+		if (!err_code) {
+			if (payment_error) {
+				err_code = payment_error;
+			}
+			else {
+				err_code = error_open_doc;
+			}
+		}
+	}
 	data["message"] = PyUnicode_FromWideChar(message.c_str(), message.size());
 	data["error"] = PyBool_FromLong(err_code);
 	data["error_code"] = PyLong_FromLong(err_code);
 	data["cashier"] = PyUnicode_FromString(cashier);
-	if (err_code == 0) {
-		addLastChequeInfo(&data);
-	}
+	addLastChequeInfo(&data);
 	delete arcus;
 	return createPyDict(data);
 };
@@ -1012,7 +1032,7 @@ static PyMethodDef cashbox_functions[] = {
 int exec_cashbox(PyObject *module) {
     PyModule_AddFunctions(module, cashbox_functions);
     PyModule_AddStringConstant(module, "__author__", "alex-proc");
-    PyModule_AddStringConstant(module, "__version__", "1.0.7");
+    PyModule_AddStringConstant(module, "__version__", "1.0.8");
     PyModule_AddIntConstant(module, "year", 2019);
     return 0; /* success */
 }
