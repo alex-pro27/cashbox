@@ -66,6 +66,10 @@ std::tuple<int, bool, wstring> checkStatusPrinter() {
 	int err = 0;
 	int is_open_shift = false;
 	getStatusFlags(&fatal, &current, &doc);
+	if (current == 0) {
+		commandStart();
+		getStatusFlags(&fatal, &current, &doc);
+	}
 	if (fatal && (err = get_bit_flag(fatal, 8)) > -1) {
 		err += 1;
 		switch (err) {
@@ -83,10 +87,6 @@ std::tuple<int, bool, wstring> checkStatusPrinter() {
 	else if (current && (err = get_bit_flag(current, 9)) > -1) {
 		err += 1;
 		switch (err) {
-		case 1:
-			err = 0;
-			commandStart();
-			break;
 		case 2:
 			mess = L"Не фискальный режим";
 			break;
@@ -1072,7 +1072,7 @@ static PyMethodDef cashbox_functions[] = {
 int exec_cashbox(PyObject *module) {
     PyModule_AddFunctions(module, cashbox_functions);
     PyModule_AddStringConstant(module, "__author__", "alex-proc");
-    PyModule_AddStringConstant(module, "__version__", "1.0.9");
+    PyModule_AddStringConstant(module, "__version__", "1.0.10");
     PyModule_AddIntConstant(module, "year", 2019);
     return 0; /* success */
 }
