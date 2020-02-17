@@ -110,15 +110,16 @@ char* ArcusHandlers::getStr(char* name) {
 }
 
 char* ArcusHandlers::getRRN() {
-	auto value = std::regex_replace(string(this->getStr("transaction_id")), std::regex("[^0-9]"), "");
-	if (!value.size()) {
-		string cheque = getCheque(false);
-		smatch matches;
-		if (std::regex_search(cheque, matches, std::regex("(?:RRN:([0-9]+))"))) {
-			if (matches.size() == 2) {
-				value = matches[1];
-			}
+	string value = "";
+	string cheque = getCheque(false);
+	smatch matches;
+	if (std::regex_search(cheque, matches, std::regex("(?:RRN:([0-9]+))"))) {
+		if (matches.size() == 2) {
+			value = matches[1];
 		}
+	}
+	if (value == "") {
+		value = std::regex_replace(string(this->getStr("transaction_id")), std::regex("[^0-9]"), "");
 	}
 	return (char*)value.c_str();
 }
@@ -129,15 +130,16 @@ char* ArcusHandlers::getMessage() {
 }
 
 char* ArcusHandlers::getPANCard() {
-	auto value = std::regex_replace(string(this->getStr("pan")), std::regex("[^0-9\\*]"), "");
-	if (!value.size()) {
-		string cheque = getCheque(false);
-		smatch matches;
-		if (std::regex_search(cheque, matches, std::regex("(?:PAN:([*0-9]+))"))) {
-			if (matches.size() == 2) {
-				value = matches[1];
-			}
+	string value = "";
+	string cheque = getCheque(false);
+	smatch matches;
+	if (std::regex_search(cheque, matches, std::regex("(?:PAN:([*0-9]+))"))) {
+		if (matches.size() == 2) {
+			value = matches[1];
 		}
+	}
+	if (value == "") {
+		value = std::regex_replace(string(this->getStr("pan")), std::regex("[^0-9\\*]"), "");
 	}
 	return (char*)value.c_str();
 }

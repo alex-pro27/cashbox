@@ -557,8 +557,8 @@ PyObject* cashbox_force_close_shift(PyObject* self) {
 
 PyDoc_STRVAR(cashbox_cancel_payment_by_link_doc, "cancel_payment_by_link(rrn, amount)\
 Cancel payment by link \
-:param str rrn: ссылка платежа\
-:param int amount: сумма\
+:param str rrn: link(id) payment \
+:param int amount: sum payment\
 :return dict()");
 PyObject* cashbox_cancel_payment_by_link(PyObject* self, PyObject* args, PyObject* kwargs) {
 	char* rrn = "";
@@ -1072,7 +1072,7 @@ static PyMethodDef cashbox_functions[] = {
 int exec_cashbox(PyObject *module) {
     PyModule_AddFunctions(module, cashbox_functions);
     PyModule_AddStringConstant(module, "__author__", "alex-proc");
-    PyModule_AddStringConstant(module, "__version__", "1.0.11");
+    PyModule_AddStringConstant(module, "__version__", "1.0.12");
     PyModule_AddIntConstant(module, "year", 2019);
     return 0; /* success */
 }
