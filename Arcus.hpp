@@ -39,11 +39,11 @@ public:
 	int closeShift(void);
 	int purchase(char* amount, char* currency);
 	int cancelLast();
-	int cancelByLink(char*, char*);
+	int refund(char*, char*);
 	int universalCancel();
 	void clean();
 	char* getStr(char* name);
-	char* getRRN();
+	char* getTransactionID();
 	char* getMessage();
 	char* getPANCard();
 	char* getCardHolderName();
@@ -109,11 +109,11 @@ char* ArcusHandlers::getStr(char* name) {
 	return value;
 }
 
-char* ArcusHandlers::getRRN() {
+char* ArcusHandlers::getTransactionID() {
 	string value = "";
 	string cheque = getCheque(false);
 	smatch matches;
-	if (std::regex_search(cheque, matches, std::regex("(?:RRN:([0-9]+))"))) {
+	if (std::regex_search(cheque, matches, std::regex("(?:ID транзакции:\\s*([0-9]+))"))) {
 		if (matches.size() == 2) {
 			value = matches[1];
 		}
@@ -173,9 +173,9 @@ int ArcusHandlers::universalCancel() {
 	return ArcusRun(pos_obj, 4);
 }
 
-int ArcusHandlers::cancelByLink(char* amount, char* rrn = NULL) {
-	if (rrn != NULL && strlen(rrn) > 3) {
-		ArcusSet(pos_obj, "transaction_id", rrn, -1);
+int ArcusHandlers::refund(char* amount, char* transaction_id) {
+	if (transaction_id != NULL && strlen(transaction_id) > 3) {
+		ArcusSet(pos_obj, "transaction_id", transaction_id, -1);
 	}
 	if (ArcusSet(pos_obj, "amount", amount, -1) != 0) return 1;
 	return ArcusRun(pos_obj, 3);

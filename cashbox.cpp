@@ -561,10 +561,10 @@ Cancel payment by link \
 :param int amount: sum payment\
 :return dict()");
 PyObject* cashbox_cancel_payment_by_link(PyObject* self, PyObject* args, PyObject* kwargs) {
-	char* rrn = "";
+	char* transaction_id = "";
 	int amount = 0;
 	static char* keywords[] = { "amount", "rrn", NULL };
-	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "i|s", keywords, &amount, &rrn)) {
+	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "i|s", keywords, &amount, &transaction_id)) {
 		return NULL;
 	}
 
@@ -573,7 +573,7 @@ PyObject* cashbox_cancel_payment_by_link(PyObject* self, PyObject* args, PyObjec
 
 	try {
 		ArcusHandlers* arcus = new ArcusHandlers();
-		err_code = arcus->cancelByLink((char*)to_string(amount).c_str(), rrn);
+		err_code = arcus->refund((char*)to_string(amount).c_str(), transaction_id);
 		message = s2ws(cp2utf((char*)arcus->getMessage()));
 		delete arcus;
 	}
@@ -759,7 +759,7 @@ create new transaction\
 :return dict()");
 PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwargs) {
 	const char* cashier;
-	const char* rrn = "";
+	const char* transaction_id = "";
 	const char* print_strings = "";
 	const char* order_prefix = "";
 	int payment_type = 0;
@@ -778,7 +778,7 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 		&doc_type,
 		&wares,
 		&amount,
-		&rrn,
+		&transaction_id,
 		&order_prefix,
 		&print_strings
 	);
@@ -865,9 +865,9 @@ PyObject* cashbox_new_transaction(PyObject* self, PyObject* args, PyObject* kwar
 			payment_error = arcus->purchase((char*)to_fixed(amount, 0).c_str());
 		}
 		else {
-			payment_error = arcus->cancelByLink((char*)to_fixed(amount, 0).c_str(), (char*)rrn);
+			payment_error = arcus->refund((char*)to_fixed(amount, 0).c_str(), (char*)transaction_id);
 		}
-		data["rrn"] = PyUnicode_FromString(cp2utf(arcus->getRRN()).c_str());
+		data["rrn"] = PyUnicode_FromString(cp2utf(arcus->getTransactionID()).c_str());
 		data["pan_card"] = PyUnicode_FromString(cp2utf(arcus->getPANCard()).c_str());
 		string cardholder_name = trim(string(arcus->getCardHolderName()));
 		data["cardholder_name"] = PyUnicode_FromString(cp2utf((char*)cardholder_name.c_str()).c_str());
@@ -1072,8 +1072,8 @@ static PyMethodDef cashbox_functions[] = {
 int exec_cashbox(PyObject *module) {
     PyModule_AddFunctions(module, cashbox_functions);
     PyModule_AddStringConstant(module, "__author__", "alex-proc");
-    PyModule_AddStringConstant(module, "__version__", "1.0.12");
-    PyModule_AddIntConstant(module, "year", 2019);
+    PyModule_AddStringConstant(module, "__version__", "1.0.13");
+    PyModule_AddIntConstant(module, "year", 2020);
     return 0; /* success */
 }
 
